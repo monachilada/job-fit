@@ -15,23 +15,22 @@
   .left-panel h2 { font-size: 14px; text-transform: uppercase; letter-spacing: 1px; color: #888; margin-bottom: 8px; }
   
   .axis-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; }
-  .axis-row .label { width: 70px; font-size: 12px; text-align: right; color: #aaa; flex-shrink: 0; }
+  .axis-row .label { width: 90px; font-size: 12px; text-align: right; color: #aaa; flex-shrink: 0; }
   .axis-row .slider-wrap { flex: 1; display: flex; align-items: center; gap: 6px; }
   .axis-row input[type=range] { flex: 1; accent-color: #4a9eff; height: 4px; }
   .axis-row .val { width: 18px; text-align: center; font-size: 13px; font-weight: 600; color: #4a9eff; }
-  .axis-row .bucket-btn { width: 22px; height: 22px; border-radius: 4px; border: 1px solid #444; background: transparent; cursor: pointer; font-size: 10px; display: flex; align-items: center; justify-content: center; transition: all .15s; }
+  .axis-row .bucket-btn { width: 28px; height: 22px; border-radius: 4px; border: 1px solid #444; background: transparent; cursor: pointer; font-size: 9px; display: flex; align-items: center; justify-content: center; transition: all .15s; white-space: nowrap; }
   .bucket-btn.b0 { border-color: #4a9eff; background: rgba(74,158,255,.15); color: #4a9eff; }
   .bucket-btn.b1 { border-color: #ffc44a; background: rgba(255,196,74,.15); color: #ffc44a; }
   .bucket-btn.b2 { border-color: #555; background: rgba(85,85,85,.15); color: #666; }
-  .axis-row .low-high { font-size: 9px; color: #555; width: 60px; text-align: center; line-height: 1.1; }
   
   .bucket-legend { display: flex; gap: 12px; margin-top: 10px; padding-top: 10px; border-top: 1px solid #2a2a2a; font-size: 11px; }
   .bucket-legend span { display: flex; align-items: center; gap: 4px; }
   .bucket-legend .dot { width: 8px; height: 8px; border-radius: 2px; }
 
   /* CENTER PANEL */
-  .center-panel { flex: 1; display: flex; align-items: center; justify-content: center; padding: 20px; position: relative; }
-  canvas#radar { max-width: 100%; max-height: calc(100vh - 80px); }
+  .center-panel { flex: 1; display: flex; align-items: center; justify-content: center; padding: 20px; position: relative; overflow: hidden; }
+  canvas#radar { width: 100%; height: 100%; display: block; }
   
   /* RIGHT PANEL */
   .right-panel { width: 360px; min-width: 300px; padding: 20px; border-left: 1px solid #2a2a2a; display: flex; flex-direction: column; gap: 16px; overflow-y: auto; }
@@ -47,16 +46,13 @@
   .btn:hover { background: #6db3ff; }
   .btn:disabled { background: #333; color: #666; cursor: not-allowed; }
   
-  .result-box { background: #1a1a1a; border: 1px solid #333; border-radius: 4px; padding: 12px; font-size: 12px; min-height: 60px; white-space: pre-wrap; display: none; }
-  .result-box.visible { display: block; }
-  .result-box .job-name { font-weight: 600; color: #4a9eff; margin-bottom: 6px; }
-  .result-box .score-line { display: flex; justify-content: space-between; padding: 2px 0; }
-  
   .history { display: flex; flex-direction: column; gap: 4px; }
-  .history-item { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 4px; padding: 8px 10px; font-size: 12px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; transition: border-color .15s; }
+  .history-item { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 4px; padding: 8px 10px; font-size: 12px; display: flex; justify-content: space-between; align-items: center; transition: border-color .15s; }
   .history-item:hover { border-color: #4a9eff; }
-  .history-item .job-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .history-item .fit-score { font-weight: 700; margin-left: 8px; }
+  .history-item .job-info { flex: 1; overflow: hidden; }
+  .history-item .job-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .history-item .job-meta { font-size: 10px; color: #666; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .history-item .fit-score { font-weight: 700; margin-left: 8px; font-size: 14px; }
   .history-item .remove { color: #555; margin-left: 6px; cursor: pointer; }
   .history-item .remove:hover { color: #ff4a4a; }
 
@@ -75,13 +71,13 @@
     <div class="bucket-legend">
       <span><div class="dot" style="background:#4a9eff"></div> Must</span>
       <span><div class="dot" style="background:#ffc44a"></div> Nice</span>
-      <span><div class="dot" style="background:#555"></div> Meh</span>
+      <span><div class="dot" style="background:#555"></div> Skip</span>
     </div>
   </div>
 
   <!-- CENTER: Radar -->
   <div class="center-panel">
-    <canvas id="radar" width="700" height="700"></canvas>
+    <canvas id="radar"></canvas>
   </div>
 
   <!-- RIGHT: Job analyzer -->
@@ -121,47 +117,51 @@
 </div>
 
 <script>
+// Aligned with Desert Island Test ranking dimensions
 const AXES = [
-  { id: 'stability',  label: 'Stability',  low: 'Risky',   high: 'Secure',   value: 3, bucket: 0 },
-  { id: 'growth',     label: 'Growth',     low: 'Stagnant', high: 'Growing',  value: 3, bucket: 0 },
-  { id: 'impact',     label: 'Impact',     low: 'Cog',      high: 'Owner',   value: 3, bucket: 1 },
-  { id: 'culture',    label: 'Culture',    low: 'Toxic',    high: 'Aligned',  value: 3, bucket: 1 },
-  { id: 'autonomy',   label: 'Autonomy',   low: 'Directed', high: 'Free',     value: 3, bucket: 1 },
-  { id: 'mission',    label: 'Mission',    low: 'Apathy',   high: 'Belief',   value: 3, bucket: 1 },
-  { id: 'salary',     label: 'Salary',     low: 'Lowball',  high: 'Premium',  value: 3, bucket: 2 },
-  { id: 'technical',  label: 'Technical',  low: 'Surface',  high: 'Deep',     value: 3, bucket: 0 },
-  { id: 'team',       label: 'Team',       low: 'Solo',     high: 'Strong',   value: 3, bucket: 1 },
-  { id: 'brand',      label: 'Brand',      low: 'Unknown',  high: 'Prestige', value: 3, bucket: 2 },
+  { id: 'salary',       label: 'Salary',       low: 'Lowball',      high: 'Premium',     value: 3, bucket: 2 },
+  { id: 'growth',       label: 'Tech Growth',  low: 'Stagnant',     high: 'Growing',     value: 3, bucket: 0 },
+  { id: 'impact',       label: 'Impact',       low: 'Cog',          high: 'Owner',       value: 3, bucket: 1 },
+  { id: 'culture',      label: 'Team Culture', low: 'Toxic',        high: 'Strong Bond', value: 3, bucket: 0 },
+  { id: 'autonomy',     label: 'Autonomy',     low: 'Directed',     high: 'Free',        value: 3, bucket: 1 },
+  { id: 'mission',      label: 'Mission',      low: 'Apathy',       high: 'Belief',      value: 3, bucket: 1 },
+  { id: 'stability',    label: 'Stability',    low: 'Risky',        high: 'Secure',      value: 3, bucket: 0 },
+  { id: 'location',     label: 'Location',     low: 'Restricted',   high: 'Flexible',    value: 3, bucket: 0 },
+  { id: 'brand',        label: 'Brand',        low: 'Unknown',      high: 'Prestige',    value: 3, bucket: 2 },
+  { id: 'management',   label: 'Leadership',   low: 'None',         high: 'Path',        value: 3, bucket: 1 },
 ];
 
-const BUCKET_LABELS = ['M', 'N', 'X'];
+const BUCKET_LABELS = ['Must', 'Nice', 'Skip'];
 const BUCKET_CLASSES = ['b0', 'b1', 'b2'];
-const BUCKET_WEIGHTS = [1.0, 0.6, 0.2]; // weighting for fit score
+const BUCKET_WEIGHTS = [1.0, 0.6, 0.2];
 
-let jobOverlays = []; // { name, scores: {axisId: value}, color }
+let jobOverlays = [];
 
 const COLORS = ['#ff6b6b','#51cf66','#ffd43b','#cc5de8','#20c997','#ff922b','#339af0','#e64980','#94d82d','#845ef7'];
 
 function save() {
-  localStorage.setItem('axes', JSON.stringify(AXES));
-  localStorage.setItem('jobs', JSON.stringify(jobOverlays));
-  localStorage.setItem('api-url', document.getElementById('api-url').value);
-  localStorage.setItem('api-key', document.getElementById('api-key').value);
-  localStorage.setItem('api-model', document.getElementById('api-model').value);
+  localStorage.setItem('jfa-axes', JSON.stringify(AXES));
+  localStorage.setItem('jfa-jobs', JSON.stringify(jobOverlays));
+  localStorage.setItem('jfa-api-url', document.getElementById('api-url').value);
+  localStorage.setItem('jfa-api-key', document.getElementById('api-key').value);
+  localStorage.setItem('jfa-api-model', document.getElementById('api-model').value);
 }
 
 function load() {
   try {
-    const saved = JSON.parse(localStorage.getItem('axes'));
+    const saved = JSON.parse(localStorage.getItem('jfa-axes'));
     if (saved) saved.forEach((s,i) => { if (AXES[i]) { AXES[i].value = s.value; AXES[i].bucket = s.bucket; } });
   } catch(e) {}
   try {
-    const jobs = JSON.parse(localStorage.getItem('jobs'));
+    const jobs = JSON.parse(localStorage.getItem('jfa-jobs'));
     if (jobs) jobOverlays = jobs;
   } catch(e) {}
-  document.getElementById('api-url').value = localStorage.getItem('api-url') || '';
-  document.getElementById('api-key').value = localStorage.getItem('api-key') || '';
-  document.getElementById('api-model').value = localStorage.getItem('api-model') || 'gpt-4o-mini';
+  const au = localStorage.getItem('jfa-api-url');
+  const ak = localStorage.getItem('jfa-api-key');
+  const am = localStorage.getItem('jfa-api-model');
+  if (au !== null) document.getElementById('api-url').value = au;
+  if (ak !== null) document.getElementById('api-key').value = ak;
+  if (am !== null) document.getElementById('api-model').value = am;
 }
 
 function renderAxes() {
@@ -172,41 +172,67 @@ function renderAxes() {
     row.className = 'axis-row';
     row.innerHTML = `
       <div class="label">${axis.label}</div>
-      <div class="low-high">${axis.low}<br>↕<br>${axis.high}</div>
       <div class="slider-wrap">
         <input type="range" min="1" max="5" value="${axis.value}" data-idx="${i}">
         <span class="val">${axis.value}</span>
       </div>
-      <button class="bucket-btn ${BUCKET_CLASSES[axis.bucket]}" data-idx="${i}" title="${['Must have','Nice to have','Not critical'][axis.bucket]}">${BUCKET_LABELS[axis.bucket]}</button>
+      <button class="bucket-btn ${BUCKET_CLASSES[axis.bucket]}" data-idx="${i}" title="${['Must have','Nice to have','Skip'][axis.bucket]}">${BUCKET_LABELS[axis.bucket]}</button>
     `;
-    const slider = row.querySelector('input[type=range]');
-    slider.addEventListener('input', e => {
+    row.querySelector('input[type=range]').addEventListener('input', e => {
       AXES[i].value = parseInt(e.target.value);
       row.querySelector('.val').textContent = e.target.value;
-      save(); draw();
+      save(); draw(); renderHistory();
     });
-    const btn = row.querySelector('.bucket-btn');
-    btn.addEventListener('click', () => {
+    row.querySelector('.bucket-btn').addEventListener('click', () => {
       AXES[i].bucket = (AXES[i].bucket + 1) % 3;
+      const btn = row.querySelector('.bucket-btn');
       btn.className = 'bucket-btn ' + BUCKET_CLASSES[AXES[i].bucket];
       btn.textContent = BUCKET_LABELS[AXES[i].bucket];
-      save(); draw();
+      save(); draw(); renderHistory();
     });
     c.appendChild(row);
   });
 }
 
+function resizeCanvas() {
+  const canvas = document.getElementById('radar');
+  const container = canvas.parentElement;
+  const dpr = window.devicePixelRatio || 1;
+  const w = container.clientWidth;
+  const h = container.clientHeight;
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  canvas.style.width = w + 'px';
+  canvas.style.height = h + 'px';
+  canvas.getContext('2d').scale(dpr, dpr);
+  draw();
+}
+
+function calcFit(job) {
+  let totalWeight = 0, totalScore = 0;
+  AXES.forEach(axis => {
+    const w = BUCKET_WEIGHTS[axis.bucket];
+    const diff = Math.abs(axis.value - (job.scores[axis.id] || 3));
+    totalWeight += w;
+    totalScore += (5 - diff) * w;
+  });
+  return totalWeight > 0 ? Math.round((totalScore / (5 * totalWeight)) * 100) : 0;
+}
+
 function draw() {
   const canvas = document.getElementById('radar');
   const ctx = canvas.getContext('2d');
-  const W = canvas.width, H = canvas.height;
+  const dpr = window.devicePixelRatio || 1;
+  const W = canvas.width / dpr;
+  const H = canvas.height / dpr;
+  ctx.save();
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
   const cx = W / 2, cy = H / 2;
-  const R = Math.min(W, H) * 0.38;
+  const R = Math.min(W, H) * 0.35;
   const n = AXES.length;
   
-  ctx.clearRect(0, 0, W, H);
-
-  // Draw grid rings
+  // Grid rings
   for (let ring = 1; ring <= 5; ring++) {
     const r = (ring / 5) * R;
     ctx.beginPath();
@@ -216,40 +242,39 @@ function draw() {
       const y = cy + r * Math.sin(angle);
       i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
     }
+    ctx.closePath();
     ctx.strokeStyle = ring === 5 ? '#333' : '#1e1e1e';
     ctx.lineWidth = ring === 5 ? 1.5 : 0.5;
     ctx.stroke();
+    // Ring number
+    if (ring % 2 === 1 || ring === 5) {
+      ctx.font = '10px -apple-system, sans-serif';
+      ctx.fillStyle = '#444';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(ring, cx + 10, cy - r + 2);
+    }
   }
 
-  // Draw axis lines and labels
+  // Axis lines and labels
+  const bcolors = ['#4a9eff','#ffc44a','#555'];
   AXES.forEach((axis, i) => {
     const angle = (Math.PI * 2 * i / n) - Math.PI / 2;
     const x = cx + R * Math.cos(angle);
     const y = cy + R * Math.sin(angle);
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(x, y);
+    ctx.strokeStyle = '#2a2a2a'; ctx.lineWidth = 0.5; ctx.stroke();
     
-    ctx.beginPath();
-    ctx.moveTo(cx, cy);
-    ctx.lineTo(x, y);
-    ctx.strokeStyle = '#2a2a2a';
-    ctx.lineWidth = 0.5;
-    ctx.stroke();
-
-    // Label
-    const labelR = R + 28;
+    const labelR = R + 24;
     const lx = cx + labelR * Math.cos(angle);
     const ly = cy + labelR * Math.sin(angle);
-    ctx.font = '12px -apple-system, sans-serif';
-    ctx.fillStyle = '#888';
-    ctx.textAlign = Math.abs(Math.cos(angle)) < 0.1 ? 'center' : Math.cos(angle) > 0 ? 'left' : 'right';
-    ctx.textBaseline = Math.abs(Math.sin(angle)) < 0.1 ? 'middle' : Math.sin(angle) > 0 ? 'top' : 'bottom';
-    
-    // Bucket indicator
-    const bcolors = ['#4a9eff','#ffc44a','#555'];
+    ctx.font = '11px -apple-system, sans-serif';
     ctx.fillStyle = bcolors[axis.bucket];
+    ctx.textAlign = Math.abs(Math.cos(angle)) < 0.15 ? 'center' : Math.cos(angle) > 0 ? 'left' : 'right';
+    ctx.textBaseline = Math.abs(Math.sin(angle)) < 0.15 ? 'middle' : Math.sin(angle) > 0 ? 'top' : 'bottom';
     ctx.fillText(axis.label, lx, ly);
   });
 
-  // Draw profile polygon
   function drawPoly(scores, fillColor, strokeColor, lineWidth) {
     ctx.beginPath();
     for (let i = 0; i <= n; i++) {
@@ -262,70 +287,55 @@ function draw() {
       i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
     }
     ctx.closePath();
-    ctx.fillStyle = fillColor;
-    ctx.fill();
-    ctx.strokeStyle = strokeColor;
-    ctx.lineWidth = lineWidth;
-    ctx.stroke();
-    
-    // Draw dots
+    ctx.fillStyle = fillColor; ctx.fill();
+    ctx.strokeStyle = strokeColor; ctx.lineWidth = lineWidth; ctx.stroke();
     for (let i = 0; i < n; i++) {
       const val = scores[i] !== undefined ? scores[i] : 0;
       const angle = (Math.PI * 2 * i / n) - Math.PI / 2;
       const r = (val / 5) * R;
-      const x = cx + r * Math.cos(angle);
-      const y = cy + r * Math.sin(angle);
       ctx.beginPath();
-      ctx.arc(x, y, 3, 0, Math.PI * 2);
-      ctx.fillStyle = strokeColor;
-      ctx.fill();
+      ctx.arc(cx + r * Math.cos(angle), cy + r * Math.sin(angle), 3, 0, Math.PI * 2);
+      ctx.fillStyle = strokeColor; ctx.fill();
     }
   }
 
-  // Draw your profile
-  const myScores = AXES.map(a => a.value);
-  drawPoly(myScores, 'rgba(74,158,255,0.1)', '#4a9eff', 2);
+  // Your profile
+  drawPoly(AXES.map(a => a.value), 'rgba(74,158,255,0.12)', '#4a9eff', 2);
 
-  // Draw job overlays
-  jobOverlays.forEach((job, idx) => {
-    const color = job.color || COLORS[idx % COLORS.length];
-    const scores = AXES.map(a => job.scores[a.id] || 0);
-    drawPoly(scores, color + '15', color, 1.5);
+  // Job overlays
+  jobOverlays.forEach((job) => {
+    const color = job.color;
+    drawPoly(AXES.map(a => job.scores[a.id] || 0), color + '18', color, 1.5);
   });
 
   // Legend
-  ctx.font = 'bold 13px -apple-system, sans-serif';
+  ctx.font = 'bold 12px -apple-system, sans-serif';
+  ctx.textAlign = 'left'; ctx.textBaseline = 'top';
   ctx.fillStyle = '#4a9eff';
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'top';
   ctx.fillText('● Your Profile', 12, 12);
   jobOverlays.forEach((job, idx) => {
-    const color = job.color || COLORS[idx % COLORS.length];
-    ctx.fillStyle = color;
-    const name = job.name.length > 30 ? job.name.substring(0, 30) + '…' : job.name;
-    ctx.fillText('● ' + name, 12, 30 + idx * 18);
+    ctx.fillStyle = job.color;
+    const name = job.name.length > 25 ? job.name.substring(0, 25) + '…' : job.name;
+    const fit = calcFit(job);
+    ctx.fillText('● ' + name + ' (' + fit + '%)', 12, 28 + idx * 16);
   });
+  ctx.restore();
 }
 
 function renderHistory() {
   const list = document.getElementById('history-list');
   list.innerHTML = '';
   jobOverlays.forEach((job, idx) => {
-    // Calculate fit score
-    let totalWeight = 0, totalScore = 0;
-    AXES.forEach(axis => {
-      const w = BUCKET_WEIGHTS[axis.bucket];
-      const diff = Math.abs(axis.value - (job.scores[axis.id] || 3));
-      totalWeight += w;
-      totalScore += (5 - diff) * w;
-    });
-    const fit = Math.round((totalScore / (5 * totalWeight)) * 100);
-    
+    const fit = calcFit(job);
+    const fitColor = fit >= 75 ? '#51cf66' : fit >= 50 ? '#ffd43b' : '#ff6b6b';
+    const meta = [job.company, job.location, job.salary].filter(Boolean).join(' · ');
     const item = document.createElement('div');
     item.className = 'history-item';
-    const fitColor = fit >= 75 ? '#51cf66' : fit >= 50 ? '#ffd43b' : '#ff6b6b';
     item.innerHTML = `
-      <span class="job-title" style="color:${job.color}">${job.name}</span>
+      <div class="job-info">
+        <div class="job-title" style="color:${job.color}">${job.name}</div>
+        ${meta ? '<div class="job-meta">' + meta + '</div>' : ''}
+      </div>
       <span class="fit-score" style="color:${fitColor}">${fit}%</span>
       <span class="remove" data-idx="${idx}">✕</span>
     `;
@@ -356,27 +366,29 @@ async function analyzeJob() {
   
   const axisList = AXES.map(a => `"${a.id}" (${a.label}: ${a.low} → ${a.high})`).join(', ');
   
-  const prompt = `You are a job-fit analyst. Analyze this job listing and score it on each axis from 1-5.
+  const prompt = `You are a job-fit analyst. Analyze this job listing.
 
-Axes: ${axisList}
+Axes (score each 1-5): ${axisList}
 
-Scoring guide for each axis:
-- stability: 1=very risky/short-term, 5=very secure/permanent
-- growth: 1=no learning/growth path, 5=strong growth trajectory
+Scoring:
+- salary: 1=below market, 5=top of market
+- growth (Tech Growth): 1=no learning path, 5=strong growth trajectory
 - impact: 1=cog in a machine, 5=significant ownership and influence
-- culture: 1=red flags/toxic signals, 5=great culture signals
+- culture (Team Culture): 1=red flags/toxic, 5=great team culture signals
 - autonomy: 1=micro-managed/rigid, 5=high autonomy/flexible
 - mission: 1=no meaningful mission, 5=strong mission you can believe in
-- salary: 1=below market, 5=top of market
-- technical: 1=surface-level work, 5=deep technical challenges
-- team: 1=weak/isolated team, 5=strong collaborative team
+- stability: 1=very risky/short-term, 5=very secure/permanent
+- location (Location Flexibility): 1=inflexible/restricted, 5=fully flexible
 - brand: 1=unknown, 5=top-tier recognizable brand
+- management (Leadership): 1=no management path, 5=clear leadership track
+
+Also extract: job title, company name, salary/compensation (as stated), location/flexibility, company size (estimate).
 
 ${url ? 'Job URL: ' + url : ''}
 ${text ? 'Job description:\n' + text : ''}
 
-Respond ONLY with valid JSON in this exact format, no other text:
-{"name":"<short job title>","scores":{"stability":N,"growth":N,"impact":N,"culture":N,"autonomy":N,"mission":N,"salary":N,"technical":N,"team":N,"brand":N},"summary":"<one sentence about the role>"}`;
+Respond ONLY with valid JSON, no other text:
+{"name":"<concise job title>","company":"<company name>","salary":"<salary as stated>","location":"<location/flexibility>","companySize":"<estimated size>","scores":{"salary":N,"growth":N,"impact":N,"culture":N,"autonomy":N,"mission":N,"stability":N,"location":N,"brand":N,"management":N},"summary":"<one sentence>"}`;
 
   try {
     const res = await fetch(apiUrl, {
@@ -387,30 +399,31 @@ Respond ONLY with valid JSON in this exact format, no other text:
     
     if (!res.ok) {
       const err = await res.text();
-      throw new Error(`API error ${res.status}: ${err.substring(0, 200)}`);
+      throw new Error('API error ' + res.status + ': ' + err.substring(0, 200));
     }
     
     const data = await res.json();
     const content = data.choices?.[0]?.message?.content || data.output?.text || '';
-    
-    // Try to extract JSON from response
     const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error('No JSON found in response: ' + content.substring(0, 200));
+    if (!jsonMatch) throw new Error('No JSON in response: ' + content.substring(0, 200));
     
     const parsed = JSON.parse(jsonMatch[0]);
     
-    const color = COLORS[jobOverlays.length % COLORS.length];
     jobOverlays.push({
       name: parsed.name || 'Job ' + (jobOverlays.length + 1),
+      company: parsed.company || '',
+      salary: parsed.salary || '',
+      location: parsed.location || '',
+      companySize: parsed.companySize || '',
       scores: parsed.scores,
-      color,
-      summary: parsed.summary
+      color: COLORS[jobOverlays.length % COLORS.length],
+      summary: parsed.summary || ''
     });
     
     save();
     renderHistory();
     draw();
-    status.textContent = `✓ ${parsed.name} — ${parsed.summary || ''}`;
+    status.textContent = '✓ ' + (parsed.name || 'Job') + ' — ' + (parsed.summary || '');
     status.style.color = '#51cf66';
     document.getElementById('job-url').value = '';
     document.getElementById('job-text').value = '';
@@ -425,7 +438,8 @@ Respond ONLY with valid JSON in this exact format, no other text:
 load();
 renderAxes();
 renderHistory();
-draw();
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
 </script>
 </body>
 </html>
