@@ -124,7 +124,6 @@ function draw() {
   const R = Math.min(W, H) * 0.35;
   const n = AXES.length;
   
-  // Grid rings
   for (let ring = 1; ring <= 5; ring++) {
     const r = (ring / 5) * R;
     ctx.beginPath();
@@ -140,22 +139,17 @@ function draw() {
     ctx.stroke();
     if (ring % 2 === 1 || ring === 5) {
       ctx.font = '10px -apple-system, sans-serif';
-      ctx.fillStyle = '#444';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#444'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText(ring, cx + 10, cy - r + 2);
     }
   }
 
-  // Axis lines and labels
   const bcolors = ['#4a9eff','#ffc44a','#555'];
   AXES.forEach((axis, i) => {
     const angle = (Math.PI * 2 * i / n) - Math.PI / 2;
-    const x = cx + R * Math.cos(angle);
-    const y = cy + R * Math.sin(angle);
-    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(x, y);
+    ctx.beginPath(); ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + R * Math.cos(angle), cy + R * Math.sin(angle));
     ctx.strokeStyle = '#2a2a2a'; ctx.lineWidth = 0.5; ctx.stroke();
-    
     const labelR = R + 24;
     const lx = cx + labelR * Math.cos(angle);
     const ly = cy + labelR * Math.sin(angle);
@@ -173,9 +167,7 @@ function draw() {
       const val = scores[idx] !== undefined ? scores[idx] : 0;
       const angle = (Math.PI * 2 * idx / n) - Math.PI / 2;
       const r = (val / 5) * R;
-      const x = cx + r * Math.cos(angle);
-      const y = cy + r * Math.sin(angle);
-      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      i === 0 ? ctx.moveTo(cx + r * Math.cos(angle), cy + r * Math.sin(angle)) : ctx.lineTo(cx + r * Math.cos(angle), cy + r * Math.sin(angle));
     }
     ctx.closePath();
     ctx.fillStyle = fillColor; ctx.fill();
@@ -195,7 +187,6 @@ function draw() {
     drawPoly(AXES.map(a => job.scores[a.id] || 0), job.color + '18', job.color, 1.5);
   });
 
-  // Legend
   ctx.font = 'bold 12px -apple-system, sans-serif';
   ctx.textAlign = 'left'; ctx.textBaseline = 'top';
   ctx.fillStyle = '#4a9eff';
@@ -221,6 +212,7 @@ function renderHistory() {
       <div class="job-info">
         <div class="job-title" style="color:${job.color}">${job.name}</div>
         ${meta ? '<div class="job-meta">' + meta + '</div>' : ''}
+        ${job.summary ? '<div class="job-summary">' + job.summary + '</div>' : ''}
       </div>
       <span class="fit-score" style="color:${fitColor}">${fit}%</span>
       <span class="remove" data-idx="${idx}">✕</span>
@@ -232,6 +224,30 @@ function renderHistory() {
     });
     list.appendChild(item);
   });
+}
+
+function showProgress(text) {
+  const wrap = document.getElementById('progress-wrap');
+  const bar = wrap.querySelector('.progress-bar');
+  const textEl = wrap.querySelector('.progress-text');
+  wrap.classList.add('visible');
+  bar.style.width = '30%';
+  textEl.textContent = text;
+}
+
+function updateProgress(text, pct) {
+  const wrap = document.getElementById('progress-wrap');
+  const bar = wrap.querySelector('.progress-bar');
+  const textEl = wrap.querySelector('.progress-text');
+  if (pct) bar.style.width = pct + '%';
+  if (text) textEl.textContent += text;
+  // Auto-scroll the text
+  textEl.scrollTop = textEl.scrollHeight;
+}
+
+function hideProgress() {
+  const wrap = document.getElementById('progress-wrap');
+  wrap.classList.remove('visible');
 }
 
 async function analyzeJob() {
@@ -248,9 +264,10 @@ async function analyzeJob() {
   const status = document.getElementById('status');
   btn.disabled = true;
   status.style.display = 'block';
-  status.textContent = 'Analyzing…';
+  status.textContent = '';
+  showProgress('Sending to ' + model + '…\n');
   
-  const homeLocation = localStorage.getItem('jfa-home-location') || 'unknown';
+  const homeLocation = localStorage.getItem('jfa-home-location') || '';
   
   const prompt = `You are a job-fit analyst. Analyze this job listing and return ONLY a JSON object with this exact structure:
 
@@ -264,12 +281,12 @@ Score each 1-5 where N is an integer:
 - autonomy: 1=micro-managed/rigid, 5=high autonomy/flexible
 - mission: 1=actively harmful to society or planet, 2=net negative, 3=neutral, 4=positive, 5=strong mission
 - stability: 1=very risky/short-term, 5=very secure/permanent
-- location: 1=strict on-site/no flexibility, 2=mostly on-site, 3=hybrid (2-3 days office), 4=mostly remote, 5=fully remote/location-independent${homeLocation !== 'unknown' ? '\n\nCandidate is based in: ' + homeLocation + '. Factor commute/distance into location score where relevant.' : ''}
+- location: 1=strict on-site/no flexibility, 2=mostly on-site, 3=hybrid (2-3 days office), 4=mostly remote, 5=fully remote/location-independent${homeLocation ? '\n\nCandidate is based in: ' + homeLocation + '. Factor commute/distance into location score where relevant.' : ''}
 - brand: 1=unknown, 5=top-tier recognizable brand
 - management: 1=no management path, 5=clear leadership track
 
 ${url ? 'Job URL: ' + url : ''}
-${text ? 'Job description:\\n' + text : ''}
+${text ? 'Job description:\n' + text : ''}
 
 Return ONLY the JSON object. No markdown, no explanation, no code fences.`;
 
@@ -277,7 +294,8 @@ Return ONLY the JSON object. No markdown, no explanation, no code fences.`;
     model,
     messages: [{ role: 'user', content: prompt }],
     temperature: 0.2,
-    response_format: { type: "json_object" }
+    response_format: { type: "json_object" },
+    stream: true
   };
 
   try {
@@ -288,23 +306,81 @@ Return ONLY the JSON object. No markdown, no explanation, no code fences.`;
     });
     
     if (!res.ok) {
+      // Non-streaming fallback
       const err = await res.text();
-      throw new Error('API error ' + res.status + ': ' + err.substring(0, 200));
+      throw new Error('API error ' + res.status + ': ' + err.substring(0, 300));
     }
+
+    updateProgress('', '50%');
+
+    // Try streaming
+    let fullContent = '';
+    const contentType = res.headers.get('content-type') || '';
     
-    const data = await res.json();
-    const content = data.choices?.[0]?.message?.content || data.output?.text || '';
-    
+    if (res.body && typeof TextDecoder !== 'undefined') {
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || !trimmed.startsWith('data: ')) continue;
+          const data = trimmed.slice(6);
+          if (data === '[DONE]') continue;
+          
+          try {
+            const parsed = JSON.parse(data);
+            const delta = parsed.choices?.[0]?.delta?.content || '';
+            if (delta) {
+              fullContent += delta;
+              updateProgress(delta);
+            }
+          } catch(e) { /* skip parse errors in chunks */ }
+        }
+      }
+      // Process remaining buffer
+      if (buffer.trim().startsWith('data: ') && buffer.trim() !== 'data: [DONE]') {
+        try {
+          const parsed = JSON.parse(buffer.trim().slice(6));
+          const delta = parsed.choices?.[0]?.delta?.content || '';
+          if (delta) { fullContent += delta; updateProgress(delta); }
+        } catch(e) {}
+      }
+    } else {
+      // No streaming support, read full response
+      const data = await res.json();
+      fullContent = data.choices?.[0]?.message?.content || data.output?.text || '';
+    }
+
+    updateProgress('\n\nParsing response…', '90%');
+
     let parsed;
     try {
-      parsed = JSON.parse(content);
+      parsed = JSON.parse(fullContent);
     } catch(e) {
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) throw new Error('No JSON in response: ' + content.substring(0, 200));
+      const jsonMatch = fullContent.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) throw new Error('No JSON in response: ' + fullContent.substring(0, 300));
       parsed = JSON.parse(jsonMatch[0]);
     }
     
-    // Validate required fields
+    // Handle flat scores (LLM might not nest them)
+    if (!parsed.scores) {
+      const possibleScores = {};
+      const axisIds = AXES.map(a => a.id);
+      axisIds.forEach(id => { if (typeof parsed[id] === 'number') { possibleScores[id] = parsed[id]; } });
+      if (Object.keys(possibleScores).length === axisIds.length) {
+        parsed.scores = possibleScores;
+      }
+    }
+    
     if (!parsed.scores || typeof parsed.scores !== 'object') throw new Error('Response missing scores object');
     const requiredAxes = AXES.map(a => a.id);
     const missing = requiredAxes.filter(id => typeof parsed.scores[id] !== 'number');
@@ -324,11 +400,13 @@ Return ONLY the JSON object. No markdown, no explanation, no code fences.`;
     save();
     renderHistory();
     draw();
+    hideProgress();
     status.textContent = '✓ ' + (parsed.name || 'Job') + ' — ' + (parsed.summary || '');
     status.style.color = '#51cf66';
     document.getElementById('job-url').value = '';
     document.getElementById('job-text').value = '';
   } catch (e) {
+    hideProgress();
     status.textContent = '✗ ' + e.message;
     status.style.color = '#ff6b6b';
   }
@@ -364,7 +442,6 @@ function detectLocation() {
         status.style.color = '#51cf66';
         save();
       } catch(e) {
-        // Fallback to coordinates
         document.getElementById('home-location').value = pos.coords.latitude.toFixed(2) + ', ' + pos.coords.longitude.toFixed(2);
         status.textContent = '✓ (coords)';
         status.style.color = '#51cf66';
