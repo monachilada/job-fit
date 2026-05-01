@@ -336,9 +336,11 @@ Return ONLY the JSON object. No markdown, no explanation, no code fences.`;
     }
 
     let fullContent = '';
+    let thinkingContent = '';
     let isStreaming = false;
+    let nonStreamBody = '';
 
-    // Try streaming first
+    // Read the response body
     if (res.body && typeof TextDecoder !== 'undefined') {
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -348,7 +350,8 @@ Return ONLY the JSON object. No markdown, no explanation, no code fences.`;
         const { done, value } = await reader.read();
         if (done) break;
         
-        buffer += decoder.decode(value, { stream: true });
+        const chunk = decoder.decode(value, { stream: true });
+        buffer += chunk;
         const lines = buffer.split('\n');
         buffer = lines.pop() || '';
         
@@ -362,35 +365,50 @@ Return ONLY the JSON object. No markdown, no explanation, no code fences.`;
             if (data === '[DONE]') continue;
             try {
               const parsed = JSON.parse(data);
+              // Content delta
               const delta = parsed.choices?.[0]?.delta?.content || '';
               if (delta) { fullContent += delta; updateProgress(delta); }
+              // Thinking/reasoning delta
+              const thinkDelta = parsed.choices?.[0]?.delta?.reasoning_content || '';
+              if (thinkDelta) {
+                thinkingContent += thinkDelta;
+                updateProgress(thinkDelta);
+              }
             } catch(e) {}
           }
         }
       }
-      // Process remaining buffer
-      if (buffer.trim().startsWith('data: ') && buffer.trim() !== 'data: [DONE]') {
-        try {
-          const parsed = JSON.parse(buffer.trim().slice(6));
-          const delta = parsed.choices?.[0]?.delta?.content || '';
-          if (delta) { fullContent += delta; updateProgress(delta); }
-        } catch(e) {}
+      // Remaining buffer
+      if (buffer.trim()) {
+        if (buffer.trim().startsWith('data: ') && buffer.trim() !== 'data: [DONE]') {
+          try {
+            const parsed = JSON.parse(buffer.trim().slice(6));
+            const delta = parsed.choices?.[0]?.delta?.content || '';
+            if (delta) { fullContent += delta; updateProgress(delta); }
+          } catch(e) {}
+        } else {
+          // Non-streamed response — the whole body came as one chunk
+          nonStreamBody = buffer;
+        }
       }
     }
 
-    // If streaming didn't work, the response body was consumed as full JSON
+    // If we didn't get SSE events, parse the raw body
     if (!isStreaming) {
-      // res.body was already consumed or wasn't readable stream — parse what we got
-      // Actually fetch again without stream if body was consumed
-      updateProgress('Waiting for response…\n');
-      const res2 = await fetch(apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
-        body: JSON.stringify({ ...body, stream: false })
-      });
-      const data = await res2.json();
-      fullContent = data.choices?.[0]?.message?.content || data.output?.text || '';
-      updateProgress(fullContent);
+      if (nonStreamBody) {
+        fullContent = nonStreamBody;
+      } else if (!fullContent) {
+        // Body was consumed but no content extracted — try non-stream fallback
+        updateProgress('\nRetrying without streaming…\n');
+        const res2 = await fetch(apiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
+          body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], temperature: 0.2, response_format: { type: "json_object" } })
+        });
+        const data = await res2.json();
+        fullContent = data.choices?.[0]?.message?.content || data.output?.text || '';
+        updateProgress(fullContent);
+      }
     }
 
     setProgressDone();
