@@ -214,17 +214,17 @@ function renderHistory() {
       <div class="job-info">
         <div class="job-title">${job.name}</div>
         <div class="job-meta">
-          ${job.company ? '<span>🏢 ' + job.company + '</span>' : ''}
-          ${job.location ? '<span>📍 ' + job.location + '</span>' : ''}
-          ${job.salary ? '<span>💰 ' + job.salary + '</span>' : ''}
-          ${job.companySize ? '<span>👥 ' + job.companySize + '</span>' : ''}
+          ${job.company ? '<span>' + job.company + '</span>' : ''}
+          ${job.location ? '<span>' + job.location + '</span>' : ''}
+          ${job.salary ? '<span>' + job.salary + '</span>' : ''}
+          ${job.companySize ? '<span>' + job.companySize + '</span>' : ''}
         </div>
         ${job.summary ? '<div class="job-summary">' + job.summary + '</div>' : ''}
       </div>
       <div class="job-actions">
         <span class="fit-score" style="color:${fitColor}">${fit}%</span>
-        <span class="toggle-btn" data-idx="${idx}" title="${job.hidden ? 'Show on chart' : 'Hide from chart'}">${job.hidden ? '👁' : '👁‍🗨'}</span>
-        <span class="remove" data-idx="${idx}" title="Delete">✕</span>
+        <span class="toggle-btn" data-idx="${idx}" title="${job.hidden ? 'Show on chart' : 'Hide from chart'}">${job.hidden ? 'Show' : 'Hide'}</span>
+        <span class="remove" data-idx="${idx}" title="Delete">Del</span>
       </div>
     `;
     item.querySelector('.toggle-btn').addEventListener('click', e => {
@@ -428,7 +428,8 @@ Return ONLY the JSON object. No markdown, no explanation, no code fences.`;
       companySize: parsed.companySize || parsed.company_size || '',
       scores: parsed.scores,
       color: COLORS[jobOverlays.length % COLORS.length],
-      summary: parsed.summary || ''
+      summary: parsed.summary || '',
+      hidden: false
     });
     
     save();
