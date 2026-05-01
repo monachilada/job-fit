@@ -57,6 +57,13 @@
         <label>Model</label>
         <input type="text" id="api-model" placeholder="gpt-4o-mini" value="gpt-4o-mini">
       </div>
+      <div class="input-group" style="margin-top:8px;">
+        <label>Home Location <span id="home-status" style="color:#555;font-size:10px"></span></label>
+        <div style="display:flex;gap:6px;">
+          <input type="text" id="home-location" placeholder="e.g. London, UK" style="flex:1">
+          <button class="btn" style="padding:6px 10px;font-size:11px;" onclick="detectLocation()">Detect</button>
+        </div>
+      </div>
     </div>
   </div>
 </div>

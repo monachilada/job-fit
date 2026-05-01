@@ -26,6 +26,8 @@ function save() {
   localStorage.setItem('jfa-api-url', document.getElementById('api-url').value);
   localStorage.setItem('jfa-api-key', document.getElementById('api-key').value);
   localStorage.setItem('jfa-api-model', document.getElementById('api-model').value);
+  const hl = document.getElementById('home-location');
+  if (hl) localStorage.setItem('jfa-home-location', hl.value);
 }
 
 function load() {
@@ -43,6 +45,15 @@ function load() {
   if (au !== null) document.getElementById('api-url').value = au;
   if (ak !== null) document.getElementById('api-key').value = ak;
   if (am !== null) document.getElementById('api-model').value = am;
+  const hl = localStorage.getItem('jfa-home-location');
+  if (hl !== null) {
+    document.getElementById('home-location').value = hl;
+    document.getElementById('home-status').textContent = hl ? '✓' : '';
+  }
+  document.getElementById('home-location').addEventListener('input', () => {
+    document.getElementById('home-status').textContent = document.getElementById('home-location').value ? '✓' : '';
+    save();
+  });
 }
 
 function renderAxes() {
@@ -239,28 +250,28 @@ async function analyzeJob() {
   status.style.display = 'block';
   status.textContent = 'Analyzing…';
   
-  const axisList = AXES.map(a => `"${a.id}": integer 1-5 (${a.label}: ${a.low} → ${a.high})`).join(', ');
+  const homeLocation = localStorage.getItem('jfa-home-location') || 'unknown';
   
-  const prompt = `You are a job-fit analyst. Analyze this job listing and return structured data.
+  const prompt = `You are a job-fit analyst. Analyze this job listing and return ONLY a JSON object with this exact structure:
 
-Axes (score each 1-5):
+{"name":"<job title>","company":"<company name>","salary":"<compensation as stated>","location":"<work arrangement: remote/hybrid/office + city>","companySize":"<estimated size>","scores":{"salary":N,"growth":N,"impact":N,"culture":N,"autonomy":N,"mission":N,"stability":N,"location":N,"brand":N,"management":N},"summary":"<one sentence>"}
+
+Score each 1-5 where N is an integer:
 - salary: 1=below market, 5=top of market
-- growth (Tech Growth): 1=no learning path, 5=strong growth trajectory
+- growth: 1=no learning path, 5=strong growth trajectory
 - impact: 1=cog in a machine, 5=significant ownership and influence
-- culture (Team Culture): 1=red flags/toxic, 5=great team culture signals
+- culture: 1=red flags/toxic, 5=great team culture signals
 - autonomy: 1=micro-managed/rigid, 5=high autonomy/flexible
-- mission: 1=actively harmful to society or planet, 2=net negative, 3=neutral/no impact, 4=positive contribution, 5=strong mission you can believe in
-- stability: 1=very risky/short-term/frequent layoffs, 5=very secure/permanent
-- location: 1=strict on-site required/no flexibility, 2=mostly on-site, 3=hybrid (2-3 days office), 4=mostly remote with occasional office, 5=fully remote/location-independent
+- mission: 1=actively harmful to society or planet, 2=net negative, 3=neutral, 4=positive, 5=strong mission
+- stability: 1=very risky/short-term, 5=very secure/permanent
+- location: 1=strict on-site/no flexibility, 2=mostly on-site, 3=hybrid (2-3 days office), 4=mostly remote, 5=fully remote/location-independent${homeLocation !== 'unknown' ? '\n\nCandidate is based in: ' + homeLocation + '. Factor commute/distance into location score where relevant.' : ''}
 - brand: 1=unknown, 5=top-tier recognizable brand
-- management (Leadership): 1=no management path, 5=clear leadership track
-
-Also extract: job title, company name, salary/compensation, location/work arrangement, company size.
+- management: 1=no management path, 5=clear leadership track
 
 ${url ? 'Job URL: ' + url : ''}
 ${text ? 'Job description:\\n' + text : ''}
 
-You MUST respond with ONLY valid JSON matching this exact schema. No markdown, no explanation, no code fences.`;
+Return ONLY the JSON object. No markdown, no explanation, no code fences.`;
 
   const body = {
     model,
@@ -330,3 +341,40 @@ renderAxes();
 renderHistory();
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
+
+function detectLocation() {
+  const status = document.getElementById('home-status');
+  status.textContent = '…';
+  status.style.color = '#ffc44a';
+  if (!navigator.geolocation) {
+    status.textContent = 'Not supported';
+    status.style.color = '#ff6b6b';
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(
+    async (pos) => {
+      try {
+        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${pos.coords.latitude}&lon=${pos.coords.longitude}&format=json&zoom=10`);
+        const data = await res.json();
+        const city = data.address.city || data.address.town || data.address.village || '';
+        const country = data.address.country || '';
+        const loc = [city, country].filter(Boolean).join(', ');
+        document.getElementById('home-location').value = loc;
+        status.textContent = '✓';
+        status.style.color = '#51cf66';
+        save();
+      } catch(e) {
+        // Fallback to coordinates
+        document.getElementById('home-location').value = pos.coords.latitude.toFixed(2) + ', ' + pos.coords.longitude.toFixed(2);
+        status.textContent = '✓ (coords)';
+        status.style.color = '#51cf66';
+        save();
+      }
+    },
+    (err) => {
+      status.textContent = 'Denied';
+      status.style.color = '#ff6b6b';
+    },
+    { timeout: 10000 }
+  );
+}
