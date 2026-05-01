@@ -184,6 +184,7 @@ function draw() {
 
   drawPoly(AXES.map(a => a.value), 'rgba(74,158,255,0.12)', '#4a9eff', 2);
   jobOverlays.forEach((job) => {
+    if (job.hidden) return;
     drawPoly(AXES.map(a => job.scores[a.id] || 0), job.color + '18', job.color, 1.5);
   });
 
@@ -192,6 +193,7 @@ function draw() {
   ctx.fillStyle = '#4a9eff';
   ctx.fillText('● Your Profile', 12, 12);
   jobOverlays.forEach((job, idx) => {
+    if (job.hidden) return;
     ctx.fillStyle = job.color;
     const name = job.name.length > 25 ? job.name.substring(0, 25) + '…' : job.name;
     ctx.fillText('● ' + name + ' (' + calcFit(job) + '%)', 12, 28 + idx * 16);
@@ -205,18 +207,31 @@ function renderHistory() {
   jobOverlays.forEach((job, idx) => {
     const fit = calcFit(job);
     const fitColor = fit >= 75 ? '#51cf66' : fit >= 50 ? '#ffd43b' : '#ff6b6b';
-    const meta = [job.company, job.location, job.salary].filter(Boolean).join(' · ');
     const item = document.createElement('div');
-    item.className = 'history-item';
+    item.className = 'history-item' + (job.hidden ? ' hidden' : '');
+    item.style.setProperty('--job-color', job.hidden ? '#555' : job.color);
     item.innerHTML = `
       <div class="job-info">
-        <div class="job-title" style="color:${job.color}">${job.name}</div>
-        ${meta ? '<div class="job-meta">' + meta + '</div>' : ''}
+        <div class="job-title">${job.name}</div>
+        <div class="job-meta">
+          ${job.company ? '<span>🏢 ' + job.company + '</span>' : ''}
+          ${job.location ? '<span>📍 ' + job.location + '</span>' : ''}
+          ${job.salary ? '<span>💰 ' + job.salary + '</span>' : ''}
+          ${job.companySize ? '<span>👥 ' + job.companySize + '</span>' : ''}
+        </div>
         ${job.summary ? '<div class="job-summary">' + job.summary + '</div>' : ''}
       </div>
-      <span class="fit-score" style="color:${fitColor}">${fit}%</span>
-      <span class="remove" data-idx="${idx}">✕</span>
+      <div class="job-actions">
+        <span class="fit-score" style="color:${fitColor}">${fit}%</span>
+        <span class="toggle-btn" data-idx="${idx}" title="${job.hidden ? 'Show on chart' : 'Hide from chart'}">${job.hidden ? '👁' : '👁‍🗨'}</span>
+        <span class="remove" data-idx="${idx}" title="Delete">✕</span>
+      </div>
     `;
+    item.querySelector('.toggle-btn').addEventListener('click', e => {
+      e.stopPropagation();
+      jobOverlays[idx].hidden = !jobOverlays[idx].hidden;
+      save(); renderHistory(); draw();
+    });
     item.querySelector('.remove').addEventListener('click', e => {
       e.stopPropagation();
       jobOverlays.splice(idx, 1);
@@ -231,23 +246,33 @@ function showProgress(text) {
   const bar = wrap.querySelector('.progress-bar');
   const textEl = wrap.querySelector('.progress-text');
   wrap.classList.add('visible');
-  bar.style.width = '30%';
+  bar.classList.add('indeterminate');
+  bar.classList.remove('progress-bar'); // force reflow
+  void bar.offsetWidth;
+  bar.className = 'progress-bar indeterminate';
   textEl.textContent = text;
 }
 
-function updateProgress(text, pct) {
+function updateProgress(text) {
+  const wrap = document.getElementById('progress-wrap');
+  const textEl = wrap.querySelector('.progress-text');
+  if (text) textEl.textContent += text;
+  textEl.scrollTop = textEl.scrollHeight;
+}
+
+function setProgressDone() {
   const wrap = document.getElementById('progress-wrap');
   const bar = wrap.querySelector('.progress-bar');
-  const textEl = wrap.querySelector('.progress-text');
-  if (pct) bar.style.width = pct + '%';
-  if (text) textEl.textContent += text;
-  // Auto-scroll the text
-  textEl.scrollTop = textEl.scrollHeight;
+  bar.classList.remove('indeterminate');
+  bar.style.width = '100%';
 }
 
 function hideProgress() {
   const wrap = document.getElementById('progress-wrap');
   wrap.classList.remove('visible');
+  const bar = wrap.querySelector('.progress-bar');
+  bar.classList.remove('indeterminate');
+  bar.style.width = '0%';
 }
 
 async function analyzeJob() {
@@ -306,17 +331,14 @@ Return ONLY the JSON object. No markdown, no explanation, no code fences.`;
     });
     
     if (!res.ok) {
-      // Non-streaming fallback
       const err = await res.text();
       throw new Error('API error ' + res.status + ': ' + err.substring(0, 300));
     }
 
-    updateProgress('', '50%');
-
-    // Try streaming
     let fullContent = '';
-    const contentType = res.headers.get('content-type') || '';
-    
+    let isStreaming = false;
+
+    // Try streaming first
     if (res.body && typeof TextDecoder !== 'undefined') {
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -332,18 +354,18 @@ Return ONLY the JSON object. No markdown, no explanation, no code fences.`;
         
         for (const line of lines) {
           const trimmed = line.trim();
-          if (!trimmed || !trimmed.startsWith('data: ')) continue;
-          const data = trimmed.slice(6);
-          if (data === '[DONE]') continue;
+          if (!trimmed) continue;
           
-          try {
-            const parsed = JSON.parse(data);
-            const delta = parsed.choices?.[0]?.delta?.content || '';
-            if (delta) {
-              fullContent += delta;
-              updateProgress(delta);
-            }
-          } catch(e) { /* skip parse errors in chunks */ }
+          if (trimmed.startsWith('data: ')) {
+            isStreaming = true;
+            const data = trimmed.slice(6);
+            if (data === '[DONE]') continue;
+            try {
+              const parsed = JSON.parse(data);
+              const delta = parsed.choices?.[0]?.delta?.content || '';
+              if (delta) { fullContent += delta; updateProgress(delta); }
+            } catch(e) {}
+          }
         }
       }
       // Process remaining buffer
@@ -354,13 +376,25 @@ Return ONLY the JSON object. No markdown, no explanation, no code fences.`;
           if (delta) { fullContent += delta; updateProgress(delta); }
         } catch(e) {}
       }
-    } else {
-      // No streaming support, read full response
-      const data = await res.json();
-      fullContent = data.choices?.[0]?.message?.content || data.output?.text || '';
     }
 
-    updateProgress('\n\nParsing response…', '90%');
+    // If streaming didn't work, the response body was consumed as full JSON
+    if (!isStreaming) {
+      // res.body was already consumed or wasn't readable stream — parse what we got
+      // Actually fetch again without stream if body was consumed
+      updateProgress('Waiting for response…\n');
+      const res2 = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
+        body: JSON.stringify({ ...body, stream: false })
+      });
+      const data = await res2.json();
+      fullContent = data.choices?.[0]?.message?.content || data.output?.text || '';
+      updateProgress(fullContent);
+    }
+
+    setProgressDone();
+    updateProgress('\n\nParsing…');
 
     let parsed;
     try {
