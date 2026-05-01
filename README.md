@@ -47,17 +47,6 @@ Aligned with the **Desert Island Test** values exercise:
 
 Works with OpenAI, GLM, DeepSeek, Together, Groq, or any OpenAI-compatible chat completions API.
 
-## Coaching Context
-
-This tool was built for a MentorCruise coaching engagement. The workflow:
-
-1. **Desert Island Test** — Mentee ranks their top 5 values from the 10 dimensions
-2. **Collect job ads** — Mentee gathers 10 real job listings they're considering
-3. **Analyze each ad** — Run them through the tool, compare fit scores
-4. **Discuss patterns** — Which jobs score high? Which dimensions keep mismatching? What does that tell you about what you're actually optimizing for?
-
-The goal isn't the number — it's the conversation the number provokes.
-
 ## Tech
 
 - Vanilla HTML/CSS/JS, zero dependencies
