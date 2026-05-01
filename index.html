@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Job Fit Analyzer</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f0f0f; color: #e0e0e0; display: flex; flex-direction: column; height: 100vh; }
+  
+  .main { display: flex; flex: 1; overflow: hidden; }
+  
+  /* LEFT PANEL */
+  .left-panel { width: 320px; min-width: 280px; padding: 20px; overflow-y: auto; border-right: 1px solid #2a2a2a; display: flex; flex-direction: column; gap: 6px; }
+  .left-panel h2 { font-size: 14px; text-transform: uppercase; letter-spacing: 1px; color: #888; margin-bottom: 8px; }
+  
+  .axis-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; }
+  .axis-row .label { width: 70px; font-size: 12px; text-align: right; color: #aaa; flex-shrink: 0; }
+  .axis-row .slider-wrap { flex: 1; display: flex; align-items: center; gap: 6px; }
+  .axis-row input[type=range] { flex: 1; accent-color: #4a9eff; height: 4px; }
+  .axis-row .val { width: 18px; text-align: center; font-size: 13px; font-weight: 600; color: #4a9eff; }
+  .axis-row .bucket-btn { width: 22px; height: 22px; border-radius: 4px; border: 1px solid #444; background: transparent; cursor: pointer; font-size: 10px; display: flex; align-items: center; justify-content: center; transition: all .15s; }
+  .bucket-btn.b0 { border-color: #4a9eff; background: rgba(74,158,255,.15); color: #4a9eff; }
+  .bucket-btn.b1 { border-color: #ffc44a; background: rgba(255,196,74,.15); color: #ffc44a; }
+  .bucket-btn.b2 { border-color: #555; background: rgba(85,85,85,.15); color: #666; }
+  .axis-row .low-high { font-size: 9px; color: #555; width: 60px; text-align: center; line-height: 1.1; }
+  
+  .bucket-legend { display: flex; gap: 12px; margin-top: 10px; padding-top: 10px; border-top: 1px solid #2a2a2a; font-size: 11px; }
+  .bucket-legend span { display: flex; align-items: center; gap: 4px; }
+  .bucket-legend .dot { width: 8px; height: 8px; border-radius: 2px; }
+
+  /* CENTER PANEL */
+  .center-panel { flex: 1; display: flex; align-items: center; justify-content: center; padding: 20px; position: relative; }
+  canvas#radar { max-width: 100%; max-height: calc(100vh - 80px); }
+  
+  /* RIGHT PANEL */
+  .right-panel { width: 360px; min-width: 300px; padding: 20px; border-left: 1px solid #2a2a2a; display: flex; flex-direction: column; gap: 16px; overflow-y: auto; }
+  .right-panel h2 { font-size: 14px; text-transform: uppercase; letter-spacing: 1px; color: #888; margin-bottom: 4px; }
+  
+  .input-group { display: flex; flex-direction: column; gap: 4px; }
+  .input-group label { font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: .5px; }
+  .input-group input, .input-group textarea { background: #1a1a1a; border: 1px solid #333; color: #e0e0e0; padding: 8px 10px; border-radius: 4px; font-size: 13px; font-family: inherit; }
+  .input-group input:focus, .input-group textarea:focus { outline: none; border-color: #4a9eff; }
+  .input-group textarea { resize: vertical; min-height: 60px; }
+  
+  .btn { background: #4a9eff; color: #000; border: none; padding: 10px 16px; border-radius: 4px; font-size: 13px; font-weight: 600; cursor: pointer; transition: background .15s; }
+  .btn:hover { background: #6db3ff; }
+  .btn:disabled { background: #333; color: #666; cursor: not-allowed; }
+  
+  .result-box { background: #1a1a1a; border: 1px solid #333; border-radius: 4px; padding: 12px; font-size: 12px; min-height: 60px; white-space: pre-wrap; display: none; }
+  .result-box.visible { display: block; }
+  .result-box .job-name { font-weight: 600; color: #4a9eff; margin-bottom: 6px; }
+  .result-box .score-line { display: flex; justify-content: space-between; padding: 2px 0; }
+  
+  .history { display: flex; flex-direction: column; gap: 4px; }
+  .history-item { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 4px; padding: 8px 10px; font-size: 12px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; transition: border-color .15s; }
+  .history-item:hover { border-color: #4a9eff; }
+  .history-item .job-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .history-item .fit-score { font-weight: 700; margin-left: 8px; }
+  .history-item .remove { color: #555; margin-left: 6px; cursor: pointer; }
+  .history-item .remove:hover { color: #ff4a4a; }
+
+  .api-config { margin-top: auto; padding-top: 12px; border-top: 1px solid #2a2a2a; }
+  .api-config h2 { color: #555; font-size: 12px; }
+  .api-config .input-group input { font-size: 12px; padding: 6px 8px; }
+</style>
+</head>
+<body>
+
+<div class="main">
+  <!-- LEFT: Axes -->
+  <div class="left-panel">
+    <h2>Your Values Profile</h2>
+    <div id="axes-container"></div>
+    <div class="bucket-legend">
+      <span><div class="dot" style="background:#4a9eff"></div> Must</span>
+      <span><div class="dot" style="background:#ffc44a"></div> Nice</span>
+      <span><div class="dot" style="background:#555"></div> Meh</span>
+    </div>
+  </div>
+
+  <!-- CENTER: Radar -->
+  <div class="center-panel">
+    <canvas id="radar" width="700" height="700"></canvas>
+  </div>
+
+  <!-- RIGHT: Job analyzer -->
+  <div class="right-panel">
+    <h2>Job Fit Analyzer</h2>
+    <div class="input-group">
+      <label>Job Ad URL</label>
+      <input type="text" id="job-url" placeholder="https://...">
+    </div>
+    <div class="input-group">
+      <label>Or paste job description</label>
+      <textarea id="job-text" rows="4" placeholder="Paste full job description text..."></textarea>
+    </div>
+    <button class="btn" id="analyze-btn" onclick="analyzeJob()">Analyze Fit</button>
+    <div id="status" style="font-size:12px;color:#888;display:none;"></div>
+    <div id="history-container">
+      <h2 style="margin-top:8px;">Analyzed Jobs</h2>
+      <div class="history" id="history-list"></div>
+    </div>
+
+    <div class="api-config">
+      <h2>LLM API Config</h2>
+      <div class="input-group" style="margin-top:6px;">
+        <label>API URL</label>
+        <input type="text" id="api-url" placeholder="https://api.openai.com/v1/chat/completions">
+      </div>
+      <div class="input-group" style="margin-top:4px;">
+        <label>API Key</label>
+        <input type="password" id="api-key" placeholder="sk-...">
+      </div>
+      <div class="input-group" style="margin-top:4px;">
+        <label>Model</label>
+        <input type="text" id="api-model" placeholder="gpt-4o-mini" value="gpt-4o-mini">
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const AXES = [
+  { id: 'stability',  label: 'Stability',  low: 'Risky',   high: 'Secure',   value: 3, bucket: 0 },
+  { id: 'growth',     label: 'Growth',     low: 'Stagnant', high: 'Growing',  value: 3, bucket: 0 },
+  { id: 'impact',     label: 'Impact',     low: 'Cog',      high: 'Owner',   value: 3, bucket: 1 },
+  { id: 'culture',    label: 'Culture',    low: 'Toxic',    high: 'Aligned',  value: 3, bucket: 1 },
+  { id: 'autonomy',   label: 'Autonomy',   low: 'Directed', high: 'Free',     value: 3, bucket: 1 },
+  { id: 'mission',    label: 'Mission',    low: 'Apathy',   high: 'Belief',   value: 3, bucket: 1 },
+  { id: 'salary',     label: 'Salary',     low: 'Lowball',  high: 'Premium',  value: 3, bucket: 2 },
+  { id: 'technical',  label: 'Technical',  low: 'Surface',  high: 'Deep',     value: 3, bucket: 0 },
+  { id: 'team',       label: 'Team',       low: 'Solo',     high: 'Strong',   value: 3, bucket: 1 },
+  { id: 'brand',      label: 'Brand',      low: 'Unknown',  high: 'Prestige', value: 3, bucket: 2 },
+];
+
+const BUCKET_LABELS = ['M', 'N', 'X'];
+const BUCKET_CLASSES = ['b0', 'b1', 'b2'];
+const BUCKET_WEIGHTS = [1.0, 0.6, 0.2]; // weighting for fit score
+
+let jobOverlays = []; // { name, scores: {axisId: value}, color }
+
+const COLORS = ['#ff6b6b','#51cf66','#ffd43b','#cc5de8','#20c997','#ff922b','#339af0','#e64980','#94d82d','#845ef7'];
+
+function save() {
+  localStorage.setItem('axes', JSON.stringify(AXES));
+  localStorage.setItem('jobs', JSON.stringify(jobOverlays));
+  localStorage.setItem('api-url', document.getElementById('api-url').value);
+  localStorage.setItem('api-key', document.getElementById('api-key').value);
+  localStorage.setItem('api-model', document.getElementById('api-model').value);
+}
+
+function load() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('axes'));
+    if (saved) saved.forEach((s,i) => { if (AXES[i]) { AXES[i].value = s.value; AXES[i].bucket = s.bucket; } });
+  } catch(e) {}
+  try {
+    const jobs = JSON.parse(localStorage.getItem('jobs'));
+    if (jobs) jobOverlays = jobs;
+  } catch(e) {}
+  document.getElementById('api-url').value = localStorage.getItem('api-url') || '';
+  document.getElementById('api-key').value = localStorage.getItem('api-key') || '';
+  document.getElementById('api-model').value = localStorage.getItem('api-model') || 'gpt-4o-mini';
+}
+
+function renderAxes() {
+  const c = document.getElementById('axes-container');
+  c.innerHTML = '';
+  AXES.forEach((axis, i) => {
+    const row = document.createElement('div');
+    row.className = 'axis-row';
+    row.innerHTML = `
+      <div class="label">${axis.label}</div>
+      <div class="low-high">${axis.low}<br>↕<br>${axis.high}</div>
+      <div class="slider-wrap">
+        <input type="range" min="1" max="5" value="${axis.value}" data-idx="${i}">
+        <span class="val">${axis.value}</span>
+      </div>
+      <button class="bucket-btn ${BUCKET_CLASSES[axis.bucket]}" data-idx="${i}" title="${['Must have','Nice to have','Not critical'][axis.bucket]}">${BUCKET_LABELS[axis.bucket]}</button>
+    `;
+    const slider = row.querySelector('input[type=range]');
+    slider.addEventListener('input', e => {
+      AXES[i].value = parseInt(e.target.value);
+      row.querySelector('.val').textContent = e.target.value;
+      save(); draw();
+    });
+    const btn = row.querySelector('.bucket-btn');
+    btn.addEventListener('click', () => {
+      AXES[i].bucket = (AXES[i].bucket + 1) % 3;
+      btn.className = 'bucket-btn ' + BUCKET_CLASSES[AXES[i].bucket];
+      btn.textContent = BUCKET_LABELS[AXES[i].bucket];
+      save(); draw();
+    });
+    c.appendChild(row);
+  });
+}
+
+function draw() {
+  const canvas = document.getElementById('radar');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const cx = W / 2, cy = H / 2;
+  const R = Math.min(W, H) * 0.38;
+  const n = AXES.length;
+  
+  ctx.clearRect(0, 0, W, H);
+
+  // Draw grid rings
+  for (let ring = 1; ring <= 5; ring++) {
+    const r = (ring / 5) * R;
+    ctx.beginPath();
+    for (let i = 0; i <= n; i++) {
+      const angle = (Math.PI * 2 * i / n) - Math.PI / 2;
+      const x = cx + r * Math.cos(angle);
+      const y = cy + r * Math.sin(angle);
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = ring === 5 ? '#333' : '#1e1e1e';
+    ctx.lineWidth = ring === 5 ? 1.5 : 0.5;
+    ctx.stroke();
+  }
+
+  // Draw axis lines and labels
+  AXES.forEach((axis, i) => {
+    const angle = (Math.PI * 2 * i / n) - Math.PI / 2;
+    const x = cx + R * Math.cos(angle);
+    const y = cy + R * Math.sin(angle);
+    
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(x, y);
+    ctx.strokeStyle = '#2a2a2a';
+    ctx.lineWidth = 0.5;
+    ctx.stroke();
+
+    // Label
+    const labelR = R + 28;
+    const lx = cx + labelR * Math.cos(angle);
+    const ly = cy + labelR * Math.sin(angle);
+    ctx.font = '12px -apple-system, sans-serif';
+    ctx.fillStyle = '#888';
+    ctx.textAlign = Math.abs(Math.cos(angle)) < 0.1 ? 'center' : Math.cos(angle) > 0 ? 'left' : 'right';
+    ctx.textBaseline = Math.abs(Math.sin(angle)) < 0.1 ? 'middle' : Math.sin(angle) > 0 ? 'top' : 'bottom';
+    
+    // Bucket indicator
+    const bcolors = ['#4a9eff','#ffc44a','#555'];
+    ctx.fillStyle = bcolors[axis.bucket];
+    ctx.fillText(axis.label, lx, ly);
+  });
+
+  // Draw profile polygon
+  function drawPoly(scores, fillColor, strokeColor, lineWidth) {
+    ctx.beginPath();
+    for (let i = 0; i <= n; i++) {
+      const idx = i % n;
+      const val = scores[idx] !== undefined ? scores[idx] : 0;
+      const angle = (Math.PI * 2 * idx / n) - Math.PI / 2;
+      const r = (val / 5) * R;
+      const x = cx + r * Math.cos(angle);
+      const y = cy + r * Math.sin(angle);
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.fillStyle = fillColor;
+    ctx.fill();
+    ctx.strokeStyle = strokeColor;
+    ctx.lineWidth = lineWidth;
+    ctx.stroke();
+    
+    // Draw dots
+    for (let i = 0; i < n; i++) {
+      const val = scores[i] !== undefined ? scores[i] : 0;
+      const angle = (Math.PI * 2 * i / n) - Math.PI / 2;
+      const r = (val / 5) * R;
+      const x = cx + r * Math.cos(angle);
+      const y = cy + r * Math.sin(angle);
+      ctx.beginPath();
+      ctx.arc(x, y, 3, 0, Math.PI * 2);
+      ctx.fillStyle = strokeColor;
+      ctx.fill();
+    }
+  }
+
+  // Draw your profile
+  const myScores = AXES.map(a => a.value);
+  drawPoly(myScores, 'rgba(74,158,255,0.1)', '#4a9eff', 2);
+
+  // Draw job overlays
+  jobOverlays.forEach((job, idx) => {
+    const color = job.color || COLORS[idx % COLORS.length];
+    const scores = AXES.map(a => job.scores[a.id] || 0);
+    drawPoly(scores, color + '15', color, 1.5);
+  });
+
+  // Legend
+  ctx.font = 'bold 13px -apple-system, sans-serif';
+  ctx.fillStyle = '#4a9eff';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillText('● Your Profile', 12, 12);
+  jobOverlays.forEach((job, idx) => {
+    const color = job.color || COLORS[idx % COLORS.length];
+    ctx.fillStyle = color;
+    const name = job.name.length > 30 ? job.name.substring(0, 30) + '…' : job.name;
+    ctx.fillText('● ' + name, 12, 30 + idx * 18);
+  });
+}
+
+function renderHistory() {
+  const list = document.getElementById('history-list');
+  list.innerHTML = '';
+  jobOverlays.forEach((job, idx) => {
+    // Calculate fit score
+    let totalWeight = 0, totalScore = 0;
+    AXES.forEach(axis => {
+      const w = BUCKET_WEIGHTS[axis.bucket];
+      const diff = Math.abs(axis.value - (job.scores[axis.id] || 3));
+      totalWeight += w;
+      totalScore += (5 - diff) * w;
+    });
+    const fit = Math.round((totalScore / (5 * totalWeight)) * 100);
+    
+    const item = document.createElement('div');
+    item.className = 'history-item';
+    const fitColor = fit >= 75 ? '#51cf66' : fit >= 50 ? '#ffd43b' : '#ff6b6b';
+    item.innerHTML = `
+      <span class="job-title" style="color:${job.color}">${job.name}</span>
+      <span class="fit-score" style="color:${fitColor}">${fit}%</span>
+      <span class="remove" data-idx="${idx}">✕</span>
+    `;
+    item.querySelector('.remove').addEventListener('click', e => {
+      e.stopPropagation();
+      jobOverlays.splice(idx, 1);
+      save(); renderHistory(); draw();
+    });
+    list.appendChild(item);
+  });
+}
+
+async function analyzeJob() {
+  const url = document.getElementById('job-url').value.trim();
+  const text = document.getElementById('job-text').value.trim();
+  const apiUrl = document.getElementById('api-url').value.trim();
+  const apiKey = document.getElementById('api-key').value.trim();
+  const model = document.getElementById('api-model').value.trim() || 'gpt-4o-mini';
+  
+  if (!url && !text) return alert('Enter a job URL or paste a description.');
+  if (!apiUrl || !apiKey) return alert('Set your LLM API URL and key first.');
+  
+  const btn = document.getElementById('analyze-btn');
+  const status = document.getElementById('status');
+  btn.disabled = true;
+  status.style.display = 'block';
+  status.textContent = 'Analyzing…';
+  
+  const axisList = AXES.map(a => `"${a.id}" (${a.label}: ${a.low} → ${a.high})`).join(', ');
+  
+  const prompt = `You are a job-fit analyst. Analyze this job listing and score it on each axis from 1-5.
+
+Axes: ${axisList}
+
+Scoring guide for each axis:
+- stability: 1=very risky/short-term, 5=very secure/permanent
+- growth: 1=no learning/growth path, 5=strong growth trajectory
+- impact: 1=cog in a machine, 5=significant ownership and influence
+- culture: 1=red flags/toxic signals, 5=great culture signals
+- autonomy: 1=micro-managed/rigid, 5=high autonomy/flexible
+- mission: 1=no meaningful mission, 5=strong mission you can believe in
+- salary: 1=below market, 5=top of market
+- technical: 1=surface-level work, 5=deep technical challenges
+- team: 1=weak/isolated team, 5=strong collaborative team
+- brand: 1=unknown, 5=top-tier recognizable brand
+
+${url ? 'Job URL: ' + url : ''}
+${text ? 'Job description:\n' + text : ''}
+
+Respond ONLY with valid JSON in this exact format, no other text:
+{"name":"<short job title>","scores":{"stability":N,"growth":N,"impact":N,"culture":N,"autonomy":N,"mission":N,"salary":N,"technical":N,"team":N,"brand":N},"summary":"<one sentence about the role>"}`;
+
+  try {
+    const res = await fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
+      body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], temperature: 0.3 })
+    });
+    
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`API error ${res.status}: ${err.substring(0, 200)}`);
+    }
+    
+    const data = await res.json();
+    const content = data.choices?.[0]?.message?.content || data.output?.text || '';
+    
+    // Try to extract JSON from response
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('No JSON found in response: ' + content.substring(0, 200));
+    
+    const parsed = JSON.parse(jsonMatch[0]);
+    
+    const color = COLORS[jobOverlays.length % COLORS.length];
+    jobOverlays.push({
+      name: parsed.name || 'Job ' + (jobOverlays.length + 1),
+      scores: parsed.scores,
+      color,
+      summary: parsed.summary
+    });
+    
+    save();
+    renderHistory();
+    draw();
+    status.textContent = `✓ ${parsed.name} — ${parsed.summary || ''}`;
+    status.style.color = '#51cf66';
+    document.getElementById('job-url').value = '';
+    document.getElementById('job-text').value = '';
+  } catch (e) {
+    status.textContent = '✗ ' + e.message;
+    status.style.color = '#ff6b6b';
+  }
+  btn.disabled = false;
+}
+
+// Init
+load();
+renderAxes();
+renderHistory();
+draw();
+</script>
+</body>
+</html>
