@@ -600,7 +600,7 @@ Return ONLY the JSON object. No markdown, no explanation, no code fences.`;
   draw();
 }
 
-function tailorCV(jobIndex) {
+async function tailorCV(jobIndex) {
   const job = jobOverlays[jobIndex];
   if (!job) return;
 
