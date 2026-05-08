@@ -18,6 +18,20 @@
       <span><div class="dot" style="background:#ffc44a"></div> Nice</span>
       <span><div class="dot" style="background:#555"></div> Skip</span>
     </div>
+    <div class="cv-template-section">
+      <div class="cv-template-header" onclick="toggleCVSection()">
+        <h2 style="margin-bottom:0">CV Template</h2>
+        <span class="cv-toggle-icon" id="cv-toggle-icon">▶</span>
+      </div>
+      <div class="cv-template-body" id="cv-template-body">
+        <textarea id="cv-template" rows="8" placeholder="Paste your full CV here — include everything. The tool will cut it down per job."></textarea>
+        <div class="cv-template-footer">
+          <span class="cv-char-count" id="cv-char-count">0 chars</span>
+          <button class="btn" style="padding:6px 12px;font-size:11px;" onclick="saveCVTemplate()">Save Template</button>
+        </div>
+        <div class="cv-helper-text">Markdown or plain text. Include all roles, achievements, and skills.</div>
+      </div>
+    </div>
   </div>
 
   <!-- CENTER: Radar -->
@@ -72,6 +86,28 @@
   </div>
 </div>
 
+<div class="cv-modal-overlay" id="cv-modal-overlay" onclick="if(event.target===this)closeCVModal()">
+  <div class="cv-modal">
+    <div class="cv-modal-header">
+      <h2>Tailored CV</h2>
+      <button class="cv-modal-close" onclick="closeCVModal()">✕</button>
+    </div>
+    <div class="cv-modal-toolbar">
+      <button class="btn" style="padding:6px 12px;font-size:11px;" onclick="copyTailoredCV()">📋 Copy to Clipboard</button>
+      <label class="cv-show-scores-label"><input type="checkbox" id="cv-show-scores" onchange="toggleShowScores()"> Show scores</label>
+      <span id="cv-modal-status" style="font-size:11px;color:#888;margin-left:auto;"></span>
+    </div>
+    <div class="cv-modal-body">
+      <div class="cv-modal-left" id="cv-tailored-output">
+        <div class="cv-loading" id="cv-loading">
+          <div class="cv-spinner"></div>
+          <span>Generating tailored CV…</span>
+        </div>
+      </div>
+      <div class="cv-modal-right" id="cv-diff-output"></div>
+    </div>
+  </div>
+</div>
 <script src="app.js"></script>
 </body>
 </html>

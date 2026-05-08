@@ -224,6 +224,7 @@ function renderHistory() {
       <div class="job-actions">
         <span class="fit-score" style="color:${fitColor}">${fit}%</span>
         <span class="toggle-btn" data-idx="${idx}" title="${job.hidden ? 'Show on chart' : 'Hide from chart'}">${job.hidden ? 'Show' : 'Hide'}</span>
+        <span class="tailor-btn" data-idx="${idx}" title="Tailor CV">✂ Tailor</span>
         <span class="remove" data-idx="${idx}" title="Delete">Del</span>
       </div>
     `;
@@ -232,9 +233,25 @@ function renderHistory() {
       jobOverlays[idx].hidden = !jobOverlays[idx].hidden;
       save(); renderHistory(); draw();
     });
+    const tailorBtn = item.querySelector('.tailor-btn');
+    if (tailorBtn) {
+      const cvTemplate = localStorage.getItem('jfa-cv-template');
+      if (!cvTemplate || !cvTemplate.trim()) {
+        tailorBtn.disabled = true;
+        tailorBtn.title = 'Save a CV template first';
+      }
+      tailorBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        tailorCV(idx);
+      });
+    }
     item.querySelector('.remove').addEventListener('click', e => {
       e.stopPropagation();
       jobOverlays.splice(idx, 1);
+      // Clean up cached tailored CV
+      Object.keys(localStorage).forEach(k => {
+        if (k.startsWith('jfa-cv-tailored-')) localStorage.removeItem(k);
+      });
       save(); renderHistory(); draw();
     });
     list.appendChild(item);
@@ -447,7 +464,9 @@ Return ONLY the JSON object. No markdown, no explanation, no code fences.`;
       scores: parsed.scores,
       color: COLORS[jobOverlays.length % COLORS.length],
       summary: parsed.summary || '',
-      hidden: false
+      hidden: false,
+      originalUrl: url || '',
+      originalText: text || ''
     });
     
     save();
@@ -466,9 +485,498 @@ Return ONLY the JSON object. No markdown, no explanation, no code fences.`;
   btn.disabled = false;
 }
 
+// ========== CV TEMPLATE ==========
+
+function toggleCVSection() {
+  const body = document.getElementById('cv-template-body');
+  const icon = document.getElementById('cv-toggle-icon');
+  body.classList.toggle('open');
+  icon.classList.toggle('open');
+}
+
+function loadCVTemplate() {
+  const saved = localStorage.getItem('jfa-cv-template');
+  const textarea = document.getElementById('cv-template');
+  if (saved) {
+    textarea.value = saved;
+    updateCVCharCount();
+    // Default collapsed if template exists
+    return true;
+  }
+  return false;
+}
+
+function saveCVTemplate() {
+  const textarea = document.getElementById('cv-template');
+  localStorage.setItem('jfa-cv-template', textarea.value);
+  // Invalidate all cached tailored CVs
+  Object.keys(localStorage).forEach(k => {
+    if (k.startsWith('jfa-cv-tailored-')) localStorage.removeItem(k);
+  });
+  updateCVCharCount();
+  renderHistory(); // Re-render to enable/disable tailor buttons
+}
+
+function updateCVCharCount() {
+  const textarea = document.getElementById('cv-template');
+  const count = document.getElementById('cv-char-count');
+  count.textContent = textarea.value.length + ' chars';
+}
+
+// ========== CV TAILOR ==========
+
+let currentTailoredData = null;
+let currentTailoredJobIdx = null;
+let keptBullets = new Set(); // bullets forced back from cut
+
+function tailorCV(jobIndex) {
+  const job = jobOverlays[jobIndex];
+  if (!job) return;
+
+  // Check for original text
+  if (!job.originalUrl && !job.originalText) {
+    openCVModal();
+    document.getElementById('cv-tailored-output').innerHTML =
+      '<div class="cv-error">This job was analyzed before CV tailoring was available. Re-analyze with the job description to enable tailoring.</div>';
+    document.getElementById('cv-diff-output').innerHTML = '';
+    document.getElementById('cv-modal-status').textContent = '';
+    return;
+  }
+
+  currentTailoredJobIdx = jobIndex;
+  keptBullets = new Set();
+  openCVModal();
+
+  // Check cache
+  const cacheKey = 'jfa-cv-tailored-' + jobIndex;
+  const cached = localStorage.getItem(cacheKey);
+  if (cached) {
+    try {
+      const data = JSON.parse(cached);
+      currentTailoredData = data;
+      renderTailoredCV(data, jobIndex);
+      return;
+    } catch(e) {}
+  }
+
+  // Generate
+  generateTailoredCV(job, jobIndex);
+}
+
+function openCVModal() {
+  document.getElementById('cv-modal-overlay').classList.add('open');
+}
+
+function closeCVModal() {
+  document.getElementById('cv-modal-overlay').classList.remove('open');
+  currentTailoredData = null;
+  currentTailoredJobIdx = null;
+  keptBullets = new Set();
+}
+
+async function generateTailoredCV(job, jobIndex) {
+  const cvTemplate = localStorage.getItem('jfa-cv-template') || '';
+  const apiUrl = document.getElementById('api-url').value.trim();
+  const apiKey = document.getElementById('api-key').value.trim();
+  const model = document.getElementById('api-model').value.trim() || 'gpt-4o-mini';
+
+  if (!cvTemplate.trim()) return;
+  if (!apiUrl || !apiKey) {
+    document.getElementById('cv-tailored-output').innerHTML =
+      '<div class="cv-error">Configure your LLM API URL and key first.</div>';
+    return;
+  }
+
+  // Show loading
+  document.getElementById('cv-tailored-output').innerHTML =
+    '<div class="cv-loading"><div class="cv-spinner"></div><span>Generating tailored CV…</span></div>';
+  document.getElementById('cv-diff-output').innerHTML = '';
+  document.getElementById('cv-modal-status').textContent = 'Calling ' + model + '…';
+
+  const fit = calcFit(job);
+  const axisScores = AXES.map(a => `${a.label}: ${job.scores[a.id] || 3}/5`).join(', ');
+
+  const jobDescription = job.originalUrl
+    ? 'Job URL: ' + job.originalUrl
+    : job.originalText;
+
+  const prompt = `You are a CV optimization assistant. Given a candidate's full CV and a job ad, produce a tailored CV that maximizes relevance WITHOUT fabricating anything.
+
+RULES:
+- Every fact in the output MUST exist in the input CV. No new achievements, metrics, or experiences.
+- Numbers and metrics are sacred — never change them.
+- Light rephrasing only: adjust word choice to align with the job ad's language where a natural fit exists. Do NOT change meaning.
+- Select the most relevant bullets and cut less relevant ones.
+- Reorder bullets within each role so the most relevant lead.
+- Rewrite the summary to reflect what this employer values most, drawn only from the selected content.
+- Order the skills section to lead with what the ad emphasizes.
+- Target one page — if it overflows, cut the lowest-relevance bullets first.
+
+INPUT CV:
+${cvTemplate}
+
+JOB AD:
+${job.name} at ${job.company}
+${job.summary}
+${job.location} | ${job.salary} | ${job.companySize}
+Fit score: ${fit}%
+Values alignment: ${axisScores}
+
+Full job description (from original analysis):
+${jobDescription}
+
+Return ONLY a JSON object with this structure:
+{
+  "summary": "tailored summary paragraph",
+  "sections": [
+    {
+      "role": "Job Title, Company, Dates",
+      "bullets": [
+        {
+          "original": "the original bullet text from the input CV",
+          "tailored": "the lightly rephrased version (or same if no change needed)",
+          "relevanceScore": 0.9,
+          "relevanceReason": "Directly matches requirement for X"
+        }
+      ]
+    }
+  ],
+  "skills": ["Skill1", "Skill2"],
+  "education": "Education line",
+  "cut": [
+    {
+      "original": "bullet text that was cut",
+      "relevanceScore": 0.2,
+      "reason": "Low relevance to ad requirements"
+    }
+  ],
+  "gaps": [
+    {
+      "requirement": "What the ad wants",
+      "suggestion": "Not found in CV — consider adding if you have relevant experience"
+    }
+  ]
+}`;
+
+  const body = {
+    model,
+    messages: [{ role: 'user', content: prompt }],
+    temperature: 0.2,
+    response_format: { type: 'json_object' },
+    stream: true
+  };
+
+  try {
+    const res = await fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
+      body: JSON.stringify(body)
+    });
+
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error('API error ' + res.status + ': ' + err.substring(0, 300));
+    }
+
+    let fullContent = '';
+    let isStreaming = false;
+    let nonStreamBody = '';
+
+    if (res.body && typeof TextDecoder !== 'undefined') {
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        buffer += chunk;
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          if (trimmed.startsWith('data: ')) {
+            isStreaming = true;
+            const data = trimmed.slice(6);
+            if (data === '[DONE]') continue;
+            try {
+              const parsed = JSON.parse(data);
+              const delta = parsed.choices?.[0]?.delta?.content || '';
+              if (delta) fullContent += delta;
+            } catch(e) {}
+          }
+        }
+      }
+      if (buffer.trim()) {
+        if (buffer.trim().startsWith('data: ') && buffer.trim() !== 'data: [DONE]') {
+          try {
+            const parsed = JSON.parse(buffer.trim().slice(6));
+            const delta = parsed.choices?.[0]?.delta?.content || '';
+            if (delta) fullContent += delta;
+          } catch(e) {}
+        } else {
+          nonStreamBody = buffer;
+        }
+      }
+    }
+
+    if (!isStreaming) {
+      if (nonStreamBody) {
+        fullContent = nonStreamBody;
+      } else if (!fullContent) {
+        const res2 = await fetch(apiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
+          body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], temperature: 0.2, response_format: { type: 'json_object' } })
+        });
+        const data = await res2.json();
+        fullContent = data.choices?.[0]?.message?.content || data.output?.text || '';
+      }
+    }
+
+    let parsed;
+    try {
+      parsed = JSON.parse(fullContent);
+    } catch(e) {
+      const jsonMatch = fullContent.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) throw new Error('No JSON in response: ' + fullContent.substring(0, 300));
+      parsed = JSON.parse(jsonMatch[0]);
+    }
+
+    // Cache result
+    const cacheKey = 'jfa-cv-tailored-' + jobIndex;
+    localStorage.setItem(cacheKey, JSON.stringify(parsed));
+
+    currentTailoredData = parsed;
+    document.getElementById('cv-modal-status').textContent = '✓ Done';
+    renderTailoredCV(parsed, jobIndex);
+
+  } catch(e) {
+    document.getElementById('cv-tailored-output').innerHTML =
+      '<div class="cv-error">Generation failed: ' + escapeHtml(e.message) + '</div>';
+    document.getElementById('cv-modal-status').textContent = '✗ Error';
+  }
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function renderTailoredCV(data, jobIndex) {
+  const output = document.getElementById('cv-tailored-output');
+  const diffOutput = document.getElementById('cv-diff-output');
+  const showScores = document.getElementById('cv-show-scores').checked;
+
+  // Build kept bullets set from cut items that user forced back
+  const forcedBullets = new Set(keptBullets);
+
+  // Left column: tailored CV
+  let html = '<div class="cv-output-summary">' + escapeHtml(data.summary || '') + '</div>';
+
+  (data.sections || []).forEach(section => {
+    html += '<div class="cv-output-section">';
+    html += '<div class="cv-output-role">' + escapeHtml(section.role || '') + '</div>';
+    (section.bullets || []).forEach((bullet, bIdx) => {
+      const score = bullet.relevanceScore || 0;
+      const scoreClass = score >= 0.7 ? 'high' : score >= 0.4 ? 'medium' : 'low';
+      const bulletId = section.role + '::' + bIdx;
+      html += '<div class="cv-output-bullet">';
+      html += '<span class="relevance-dot ' + scoreClass + '"></span>';
+      html += escapeHtml(bullet.tailored || bullet.original || '');
+      if (showScores) {
+        html += ' <span style="font-size:10px;color:' + (score >= 0.7 ? '#51cf66' : score >= 0.4 ? '#ffc44a' : '#ff6b6b') + '">' + Math.round(score * 100) + '%</span>';
+      }
+      html += '</div>';
+    });
+    html += '</div>';
+  });
+
+  // Add forced-back bullets at the end
+  if (forcedBullets.size > 0 && data.cut) {
+    const forcedItems = data.cut.filter((item, idx) => forcedBullets.has('cut::' + idx));
+    if (forcedItems.length > 0) {
+      html += '<div class="cv-output-section" style="margin-top:12px;padding-top:12px;border-top:1px dashed #333;">';
+      html += '<div class="cv-output-role" style="color:#ffc44a;font-size:12px;">Reinstated items</div>';
+      forcedItems.forEach(item => {
+        html += '<div class="cv-output-bullet cut-back">' + escapeHtml(item.original || '') + '</div>';
+      });
+      html += '</div>';
+    }
+  }
+
+  // Skills
+  if (data.skills && data.skills.length > 0) {
+    html += '<div class="cv-output-skills">';
+    data.skills.forEach(s => {
+      html += '<span class="cv-output-skill">' + escapeHtml(s) + '</span>';
+    });
+    html += '</div>';
+  }
+
+  // Education
+  if (data.education) {
+    html += '<div class="cv-output-education">' + escapeHtml(data.education) + '</div>';
+  }
+
+  output.innerHTML = html;
+
+  // Right column: diff view
+  renderDiffView(data, forcedBullets);
+}
+
+function renderDiffView(data, forcedBullets) {
+  const diffOutput = document.getElementById('cv-diff-output');
+  let html = '';
+
+  // KEPT section
+  let keptCount = 0;
+  (data.sections || []).forEach(s => { keptCount += (s.bullets || []).length; });
+  if (keptCount > 0) {
+    html += '<div class="diff-section diff-kept">';
+    html += '<div class="diff-section-header" onclick="this.nextElementSibling.classList.toggle(\'open\')"><span>✓ Kept <span class="diff-count">(' + keptCount + ')</span></span><span class="diff-toggle">▶</span></div>';
+    html += '<div class="diff-section-body open">';
+    (data.sections || []).forEach(section => {
+      html += '<div style="font-size:11px;color:#888;font-weight:600;margin-top:8px;">' + escapeHtml(section.role || '') + '</div>';
+      (section.bullets || []).forEach(bullet => {
+        if (bullet.original !== bullet.tailored && bullet.tailored) {
+          html += '<div class="diff-item"><span class="diff-original"><del>' + escapeHtml(bullet.original) + '</del> → <strong>' + escapeHtml(bullet.tailored) + '</strong></span></div>';
+        }
+      });
+    });
+    html += '</div></div>';
+  }
+
+  // CUT section
+  if (data.cut && data.cut.length > 0) {
+    const activeCuts = data.cut.filter((_, idx) => !forcedBullets.has('cut::' + idx));
+    html += '<div class="diff-section diff-cut">';
+    html += '<div class="diff-section-header" onclick="this.nextElementSibling.classList.toggle(\'open\')"><span>✗ Cut <span class="diff-count">(' + activeCuts.length + ')</span></span><span class="diff-toggle">▶</span></div>';
+    html += '<div class="diff-section-body open">';
+    data.cut.forEach((item, idx) => {
+      const isForced = forcedBullets.has('cut::' + idx);
+      html += '<div class="diff-item" style="' + (isForced ? 'opacity:0.3;text-decoration:line-through;' : '') + '"><span class="diff-original">' + escapeHtml(item.original || '') + '</span>';
+      html += ' <span class="diff-score">' + Math.round((item.relevanceScore || 0) * 100) + '%</span>';
+      if (!isForced) {
+        html += ' <button class="diff-keep-toggle" onclick="toggleKeepBullet(\'cut::' + idx + '\', this)">Keep anyway</button>';
+      } else {
+        html += ' <button class="diff-keep-toggle active" onclick="toggleKeepBullet(\'cut::' + idx + '\', this)">Kept</button>';
+      }
+      if (item.reason) html += '<span class="diff-reason">' + escapeHtml(item.reason) + '</span>';
+      html += '</div>';
+    });
+    html += '</div></div>';
+  }
+
+  // GAPS section
+  if (data.gaps && data.gaps.length > 0) {
+    html += '<div class="diff-section diff-gaps">';
+    html += '<div class="diff-section-header" onclick="this.nextElementSibling.classList.toggle(\'open\')"><span>⚠ Gaps <span class="diff-count">(' + data.gaps.length + ')</span></span><span class="diff-toggle">▶</span></div>';
+    html += '<div class="diff-section-body">';
+    data.gaps.forEach(gap => {
+      html += '<div class="diff-item"><span class="diff-gap-req">' + escapeHtml(gap.requirement || '') + '</span>';
+      if (gap.suggestion) html += '<span class="diff-gap-sug">' + escapeHtml(gap.suggestion) + '</span>';
+      html += '</div>';
+    });
+    html += '</div></div>';
+  }
+
+  diffOutput.innerHTML = html;
+}
+
+function toggleKeepBullet(id, btn) {
+  if (keptBullets.has(id)) {
+    keptBullets.delete(id);
+    btn.classList.remove('active');
+    btn.textContent = 'Keep anyway';
+  } else {
+    keptBullets.add(id);
+    btn.classList.add('active');
+    btn.textContent = 'Kept';
+  }
+  // Re-render both columns
+  if (currentTailoredData && currentTailoredJobIdx !== null) {
+    renderTailoredCV(currentTailoredData, currentTailoredJobIdx);
+  }
+}
+
+function toggleShowScores() {
+  const output = document.getElementById('cv-tailored-output');
+  const showScores = document.getElementById('cv-show-scores').checked;
+  if (showScores) {
+    output.classList.add('show-scores');
+  } else {
+    output.classList.remove('show-scores');
+  }
+  // Re-render to update score visibility
+  if (currentTailoredData && currentTailoredJobIdx !== null) {
+    renderTailoredCV(currentTailoredData, currentTailoredJobIdx);
+  }
+}
+
+function copyTailoredCV() {
+  if (!currentTailoredData) return;
+
+  let text = currentTailoredData.summary || '';
+  text += '\n\n';
+
+  (currentTailoredData.sections || []).forEach(section => {
+    text += section.role + '\n';
+    (section.bullets || []).forEach(bullet => {
+      text += '• ' + (bullet.tailored || bullet.original) + '\n';
+    });
+    text += '\n';
+  });
+
+  // Add forced-back bullets
+  if (keptBullets.size > 0 && currentTailoredData.cut) {
+    currentTailoredData.cut.forEach((item, idx) => {
+      if (keptBullets.has('cut::' + idx)) {
+        text += '• ' + (item.original || '') + '\n';
+      }
+    });
+    text += '\n';
+  }
+
+  if (currentTailoredData.skills && currentTailoredData.skills.length > 0) {
+    text += 'Skills: ' + currentTailoredData.skills.join(', ') + '\n';
+  }
+  if (currentTailoredData.education) {
+    text += '\n' + currentTailoredData.education + '\n';
+  }
+
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.querySelector('.cv-modal-toolbar .btn');
+    const orig = btn.textContent;
+    btn.textContent = '✓ Copied!';
+    setTimeout(() => { btn.textContent = orig; }, 1500);
+  });
+}
+
+function renderCVTemplateSection() {
+  const hasTemplate = loadCVTemplate();
+  const textarea = document.getElementById('cv-template');
+  const icon = document.getElementById('cv-toggle-icon');
+  const body = document.getElementById('cv-template-body');
+
+  textarea.addEventListener('input', updateCVCharCount);
+
+  // Default collapsed if template already saved
+  if (!hasTemplate) {
+    body.classList.add('open');
+    icon.classList.add('open');
+  }
+}
+
 // Init
 load();
 renderAxes();
+renderCVTemplateSection();
 renderHistory();
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();

@@ -66,5 +66,88 @@ canvas#radar { width: 100%; height: 100%; display: block; }
 .history-item .remove:hover { color: #ff4a4a; }
 
 .api-config { margin-top: auto; padding-top: 12px; border-top: 1px solid #2a2a2a; }
+
+/* CV TEMPLATE SECTION */
+.cv-template-section { margin-top: 16px; border-top: 1px solid #2a2a2a; padding-top: 10px; }
+.cv-template-header { display: flex; align-items: center; justify-content: space-between; cursor: pointer; user-select: none; }
+.cv-template-header h2 { margin-bottom: 0; }
+.cv-toggle-icon { font-size: 10px; color: #666; transition: transform .2s; }
+.cv-toggle-icon.open { transform: rotate(90deg); }
+.cv-template-body { display: none; margin-top: 8px; }
+.cv-template-body.open { display: flex; flex-direction: column; gap: 6px; }
+.cv-template-body textarea { background: #1a1a1a; border: 1px solid #333; color: #e0e0e0; padding: 8px 10px; border-radius: 4px; font-size: 12px; font-family: inherit; resize: vertical; min-height: 80px; line-height: 1.5; }
+.cv-template-body textarea:focus { outline: none; border-color: #4a9eff; }
+.cv-template-footer { display: flex; justify-content: space-between; align-items: center; }
+.cv-char-count { font-size: 11px; color: #555; }
+.cv-helper-text { font-size: 10px; color: #444; line-height: 1.4; }
+
+/* TAILOR BUTTON */
+.tailor-btn { background: none; border: none; cursor: pointer; font-size: 12px; padding: 2px 4px; color: #4a9eff; }
+.tailor-btn:hover { color: #6db3ff; }
+.tailor-btn:disabled { color: #333; cursor: not-allowed; }
+
+/* CV MODAL */
+.cv-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
+.cv-modal-overlay.open { display: flex; }
+.cv-modal { background: #0f0f0f; border: 1px solid #2a2a2a; border-radius: 8px; width: 90vw; max-width: 1100px; height: 80vh; display: flex; flex-direction: column; overflow: hidden; }
+.cv-modal-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid #2a2a2a; }
+.cv-modal-header h2 { font-size: 14px; text-transform: uppercase; letter-spacing: 1px; color: #888; margin: 0; }
+.cv-modal-close { background: none; border: none; color: #666; font-size: 18px; cursor: pointer; padding: 4px 8px; border-radius: 4px; }
+.cv-modal-close:hover { color: #e0e0e0; background: #1a1a1a; }
+.cv-modal-toolbar { display: flex; align-items: center; gap: 12px; padding: 10px 20px; border-bottom: 1px solid #1e1e1e; }
+.cv-show-scores-label { font-size: 11px; color: #888; display: flex; align-items: center; gap: 4px; cursor: pointer; }
+.cv-show-scores-label input { accent-color: #4a9eff; }
+.cv-modal-body { display: flex; flex: 1; overflow: hidden; }
+.cv-modal-left { flex: 1; padding: 20px; overflow-y: auto; border-right: 1px solid #2a2a2a; }
+.cv-modal-right { width: 400px; min-width: 320px; padding: 20px; overflow-y: auto; }
+
+/* CV OUTPUT STYLES */
+.cv-output-section { margin-bottom: 16px; }
+.cv-output-role { font-size: 14px; font-weight: 600; color: #e0e0e0; margin-bottom: 8px; }
+.cv-output-bullet { font-size: 12px; line-height: 1.6; color: #bbb; padding: 2px 0 2px 16px; position: relative; }
+.cv-output-bullet::before { content: '•'; position: absolute; left: 4px; color: #4a9eff; }
+.cv-output-bullet.cut-back { opacity: 0.4; }
+.cv-output-summary { font-size: 13px; color: #ccc; line-height: 1.6; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid #2a2a2a; }
+.cv-output-skills { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+.cv-output-skill { background: #1a1a1a; border: 1px solid #333; border-radius: 4px; padding: 3px 8px; font-size: 11px; color: #aaa; }
+.cv-output-education { font-size: 12px; color: #999; margin-bottom: 16px; }
+
+/* RELEVANCE DOTS */
+.relevance-dot { display: none; width: 8px; height: 8px; border-radius: 50%; position: absolute; left: -4px; top: 7px; }
+.relevance-dot.high { background: #51cf66; }
+.relevance-dot.medium { background: #ffc44a; }
+.relevance-dot.low { background: #ff6b6b; }
+.show-scores .relevance-dot { display: inline-block; }
+
+/* DIFF VIEW */
+.diff-section { margin-bottom: 12px; border: 1px solid #2a2a2a; border-radius: 4px; overflow: hidden; }
+.diff-section-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; background: #1a1a1a; cursor: pointer; user-select: none; font-size: 12px; font-weight: 600; }
+.diff-section-header .diff-count { font-size: 10px; color: #666; font-weight: 400; }
+.diff-section-header .diff-toggle { color: #555; font-size: 10px; }
+.diff-section-body { display: none; padding: 8px 10px; }
+.diff-section-body.open { display: block; }
+.diff-kept .diff-section-header { color: #51cf66; }
+.diff-cut .diff-section-header { color: #ff6b6b; }
+.diff-gaps .diff-section-header { color: #ffc44a; }
+.diff-item { font-size: 11px; line-height: 1.5; padding: 4px 0; border-bottom: 1px solid #1e1e1e; }
+.diff-item:last-child { border-bottom: none; }
+.diff-item .diff-score { font-size: 10px; color: #666; margin-left: 6px; }
+.diff-item .diff-reason { font-size: 10px; color: #555; display: block; margin-top: 2px; }
+.diff-item .diff-original { color: #888; }
+.diff-item del { color: #ff6b6b; text-decoration: line-through; opacity: 0.7; }
+.diff-item ins, .diff-item strong { color: #51cf66; text-decoration: none; }
+.diff-keep-toggle { background: none; border: 1px solid #444; color: #888; font-size: 10px; padding: 1px 6px; border-radius: 3px; cursor: pointer; margin-left: 6px; }
+.diff-keep-toggle:hover { border-color: #4a9eff; color: #4a9eff; }
+.diff-keep-toggle.active { border-color: #51cf66; color: #51cf66; background: rgba(81,207,102,.1); }
+.diff-gap-req { font-size: 11px; color: #ccc; }
+.diff-gap-sug { font-size: 10px; color: #666; display: block; margin-top: 2px; }
+
+/* CV LOADING */
+.cv-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; height: 100%; color: #888; font-size: 13px; }
+.cv-spinner { width: 24px; height: 24px; border: 2px solid #333; border-top-color: #4a9eff; border-radius: 50%; animation: cv-spin .8s linear infinite; }
+@keyframes cv-spin { to { transform: rotate(360deg); } }
+
+/* CV ERROR */
+.cv-error { color: #ff6b6b; font-size: 12px; padding: 16px; text-align: center; line-height: 1.5; }
 .api-config h2 { color: #555; font-size: 12px; }
 .api-config .input-group input { font-size: 12px; padding: 6px 8px; }
