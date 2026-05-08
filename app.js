@@ -224,7 +224,7 @@ function renderHistory() {
       <div class="job-actions">
         <span class="fit-score" style="color:${fitColor}">${fit}%</span>
         <span class="toggle-btn" data-idx="${idx}" title="${job.hidden ? 'Show on chart' : 'Hide from chart'}">${job.hidden ? 'Show' : 'Hide'}</span>
-        <span class="tailor-btn" data-idx="${idx}" title="Tailor CV">✂ Tailor</span>
+        <span class="tailor-btn" data-idx="${idx}" title="Tailor CV">Tailor CV</span>
         <span class="remove" data-idx="${idx}" title="Delete">Del</span>
       </div>
     `;
@@ -529,18 +529,95 @@ let currentTailoredData = null;
 let currentTailoredJobIdx = null;
 let keptBullets = new Set(); // bullets forced back from cut
 
+async function reanalyzeJob(jobIndex) {
+  const job = jobOverlays[jobIndex];
+  if (!job) throw new Error('Job not found');
+
+  const apiUrl = document.getElementById('api-url').value.trim();
+  const apiKey = document.getElementById('api-key').value.trim();
+  const model = document.getElementById('api-model').value.trim() || 'gpt-4o-mini';
+
+  if (!apiUrl || !apiKey) throw new Error('Configure LLM API URL and key first');
+
+  // Try fetching the original URL if we have it, otherwise warn
+  let jobText = '';
+  if (job.name && job.company) {
+    // Reconstruct a minimal description from stored metadata
+    jobText = `${job.name} at ${job.company}`;
+    if (job.location) jobText += ` | ${job.location}`;
+    if (job.salary) jobText += ` | ${job.salary}`;
+    if (job.summary) jobText += `\n${job.summary}`;
+  }
+
+  if (!jobText.trim()) throw new Error('Not enough job data to re-analyze');
+
+  const homeLocation = localStorage.getItem('jfa-home-location') || '';
+
+  const prompt = `You are a job-fit analyst. Analyze this job listing and return ONLY a JSON object with this exact structure:
+
+{"name":"<job title>","company":"<company name>","salary":"<compensation as stated>","location":"<work arrangement: remote/hybrid/office + city>","companySize":"<estimated size>","scores":{"salary":N,"growth":N,"impact":N,"culture":N,"autonomy":N,"mission":N,"stability":N,"location":N,"brand":N,"management":N},"summary":"<one sentence>"}
+
+Score each 1-5 where N is an integer:
+- salary: 1=below market, 5=top of market
+- growth: 1=no learning path, 5=strong growth trajectory
+- impact: 1=cog in a machine, 5=significant ownership and influence
+- culture: 1=red flags/toxic, 5=great team culture signals
+- autonomy: 1=micro-managed/rigid, 5=high autonomy/flexible
+- mission: 1=actively harmful to society or planet, 2=net negative, 3=neutral, 4=positive, 5=strong mission
+- stability: 1=very risky/short-term, 5=very secure/permanent
+- location: 1=strict on-site/no flexibility, 2=mostly on-site, 3=hybrid (2-3 days office), 4=mostly remote, 5=fully remote/location-independent${homeLocation ? '\n\nCandidate is based in: ' + homeLocation + '. Factor commute/distance into location score where relevant.' : ''}
+- brand: 1=unknown, 5=top-tier recognizable brand
+- management: 1=no management path, 5=clear leadership track
+
+Job description:\n${jobText}
+
+Return ONLY the JSON object. No markdown, no explanation, no code fences.`;
+
+  const res = await fetch(apiUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
+    body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], temperature: 0.2, response_format: { type: 'json_object' } })
+  });
+
+  if (!res.ok) throw new Error('API error ' + res.status);
+
+  const data = await res.json();
+  let parsed;
+  try {
+    parsed = JSON.parse(data.choices?.[0]?.message?.content || data.output?.text || '');
+  } catch(e) {
+    const jsonMatch = (data.choices?.[0]?.message?.content || '').match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('Invalid response');
+    parsed = JSON.parse(jsonMatch[0]);
+  }
+
+  if (!parsed.scores) throw new Error('Missing scores');
+
+  // Update the job in place
+  jobOverlays[jobIndex] = { ...job, ...parsed, originalText: jobText };
+  save();
+  renderHistory();
+  draw();
+}
+
 function tailorCV(jobIndex) {
   const job = jobOverlays[jobIndex];
   if (!job) return;
 
-  // Check for original text
+  // If no original text stored (pre-CV-tailor job), re-analyze first
   if (!job.originalUrl && !job.originalText) {
     openCVModal();
     document.getElementById('cv-tailored-output').innerHTML =
-      '<div class="cv-error">This job was analyzed before CV tailoring was available. Re-analyze with the job description to enable tailoring.</div>';
+      '<div class="cv-loading"><div class="cv-spinner"></div><span>Re-analyzing job to enable tailoring…</span></div>';
     document.getElementById('cv-diff-output').innerHTML = '';
-    document.getElementById('cv-modal-status').textContent = '';
-    return;
+    document.getElementById('cv-modal-status').textContent = 'Re-analyzing…';
+    try {
+      await reanalyzeJob(jobIndex);
+    } catch(e) {
+      document.getElementById('cv-tailored-output').innerHTML =
+        '<div class="cv-error">Re-analysis failed: ' + e.message + '</div>';
+      return;
+    }
   }
 
   currentTailoredJobIdx = jobIndex;
